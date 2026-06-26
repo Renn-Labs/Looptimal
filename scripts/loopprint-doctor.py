@@ -338,6 +338,8 @@ HARNESS_SKILL_DIRS = [
     ("claude", _skills_dirs),                                       # ~/.claude/skills (+ CLAUDE_CONFIG_DIR)
     ("openclaw", lambda: [Path.home() / ".openclaw" / "skills"]),
     ("hermes", lambda: [Path.home() / ".hermes" / "skills"]),
+    ("opencode", lambda: [Path.home() / ".config" / "opencode" / "skills",  # OpenCode: global + personal dirs
+                          Path.home() / ".opencode" / "skills"]),
 ]
 
 
@@ -367,8 +369,8 @@ def _check_one_link(r: Report, harness: str, link: Path) -> None:
 
 
 def check_skill_links(r: Report) -> None:
-    """Health-check the folder-skill symlink in EVERY harness skills dir present (Claude, OpenClaw, Hermes).
-    They all discover ~/.<harness>/skills/<name>/SKILL.md the same way, so a dangling/wrong/missing link is
+    """Health-check the folder-skill symlink in EVERY harness skills dir present (Claude, OpenClaw, Hermes,
+    OpenCode). They all discover <skills-dir>/<name>/SKILL.md the same way, so a dangling/wrong/missing link is
     checked alike — not just Claude's — and every existing skills dir is inspected, not only the first."""
     checked = False
     for harness, dirs_fn in HARNESS_SKILL_DIRS:
@@ -378,7 +380,7 @@ def check_skill_links(r: Report) -> None:
                 _check_one_link(r, harness, d / "loopprint")
     if not checked:
         r.add("skill_links", "SKIP",
-              "no harness skills dir (Claude/OpenClaw/Hermes) — plugin install, or none present")
+              "no harness skills dir (Claude/OpenClaw/Hermes/OpenCode) — plugin install, or none present")
 
 
 def _safe_resolve(p: Path) -> str:
@@ -400,12 +402,15 @@ def check_ecosystem_hint(r: Report) -> None:
         seen.append("openclaw")
     if (home / ".hermes" / "skills").is_dir():
         seen.append("hermes")
+    if (home / ".config" / "opencode").is_dir() or (home / ".opencode" / "skills").is_dir():
+        seen.append("opencode")
     if seen:
         r.add("ecosystem", "INFO", f"detected: {', '.join(seen)}",
-              "Harnesses that discover ~/.<harness>/skills/ (OpenClaw, Hermes) install like Claude — symlink "
-              "the repo into that skills dir. For harnesses that real-copy skills (Codex/OMX) or read an "
-              "AGENTS.md catalog (Grok), re-run that harness's sync after updates. These bridges are owned by "
-              "your harness; see references/troubleshooting.md.")
+              "Harnesses that discover a skills dir (OpenClaw, Hermes, OpenCode) install like Claude — symlink "
+              "the repo into that skills dir (OpenCode also auto-loads skills from ~/.claude/skills). For "
+              "harnesses that real-copy skills (Codex/OMX) or read an AGENTS.md catalog (Grok), re-run that "
+              "harness's sync after updates. These bridges are owned by your harness; see "
+              "references/troubleshooting.md.")
     else:
         r.add("ecosystem", "INFO", "no known harness markers — generic install")
 

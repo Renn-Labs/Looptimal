@@ -86,10 +86,10 @@ This is a **discovery or activation** problem (layer 2–3). By install type:
 |-|-|
 | The pointer section was edited away | re-add a short "LoopPrint" pointer to that harness's `AGENTS.md` describing when to use it and where the folder lives |
 
-**OpenClaw / Hermes (and any `~/.<harness>/skills/` agent)**
+**OpenCode / OpenClaw / Hermes (and any `~/.<harness>/skills/` agent)**
 | Cause | Fix |
 |-|-|
-| Not linked into the harness's skills dir | `ln -s <repo> ~/.openclaw/skills/loopprint` or `ln -s <repo> ~/.hermes/skills/loopprint` — these discover folder-skills like Claude does; on Hermes run `hermes skills` to confirm it's picked up |
+| Not linked into the harness's skills dir | `ln -s <repo> ~/.config/opencode/skills/loopprint` (OpenCode — which *also* auto-loads from `~/.claude/skills/`, so a Claude folder install already works), `ln -s <repo> ~/.openclaw/skills/loopprint` (OpenClaw), or `ln -s <repo> ~/.hermes/skills/loopprint` (Hermes; run `hermes skills` to confirm). These all discover folder-skills like Claude does |
 | Dangling symlink / bad frontmatter / partial clone | identical to the Claude folder-skill rows above; `loopprint-doctor.py` covers these via its `contract_files` / frontmatter / exec-bit checks |
 
 ### "It triggers, but a script errors / the lint won't run"

@@ -56,14 +56,17 @@ git clone https://github.com/Renn-Labs/LoopPrint ~/loopprint
 ln -s ~/loopprint ~/.claude/skills/loopprint
 ```
 
-**Other harnesses (OpenClaw, Hermes, Codex, Grok, …):** LoopPrint is one portable skill, and many agents discover
-folder-skills the same way Claude does. Symlink it into that harness's skills directory:
+**Other harnesses (OpenCode, OpenClaw, Hermes, Codex, Grok, …):** LoopPrint is one portable skill, and many agents
+discover folder-skills the same way Claude does. Symlink it into that harness's skills directory:
 ```bash
-ln -s ~/loopprint ~/.openclaw/skills/loopprint   # OpenClaw / EClaw
-ln -s ~/loopprint ~/.hermes/skills/loopprint     # Hermes (then `hermes skills` to verify)
+ln -s ~/loopprint ~/.config/opencode/skills/loopprint  # OpenCode (also auto-loads from ~/.claude/skills)
+ln -s ~/loopprint ~/.openclaw/skills/loopprint          # OpenClaw / EClaw
+ln -s ~/loopprint ~/.hermes/skills/loopprint            # Hermes (then `hermes skills` to verify)
 ```
-For harnesses that real-copy skills (Codex/OMX) or read an `AGENTS.md` catalog (Grok), register it the way that
-harness expects. The skill is self-contained; `templates/` and `references/` load on demand.
+[OpenCode](https://opencode.ai/docs/skills/) natively discovers Agent Skills — including from `~/.claude/skills/` — so
+if you did the Claude folder install above, LoopPrint already works in OpenCode with no extra step. For harnesses that
+real-copy skills (Codex/OMX) or read an `AGENTS.md` catalog (Grok), register it the way that harness expects. The skill
+is self-contained; `templates/` and `references/` load on demand.
 
 ## Use
 

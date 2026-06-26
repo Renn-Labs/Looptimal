@@ -36,6 +36,9 @@ MARKERS = [
     ("oh-my-codex",      lambda cwd: (cwd / ".omx").is_dir() or (Path.home() / ".codex" / "skills").is_dir()),
     ("openclaw",         lambda _: _on_path("openclaw") or (Path.home() / ".openclaw" / "skills").is_dir()),
     ("hermes",           lambda _: _on_path("hermes") or (Path.home() / ".hermes" / "skills").is_dir()),
+    ("opencode",         lambda cwd: (cwd / ".opencode").is_dir() or _on_path("opencode")
+                                     or (Path.home() / ".config" / "opencode").is_dir()
+                                     or (Path.home() / ".opencode" / "skills").is_dir()),
 ]
 
 
