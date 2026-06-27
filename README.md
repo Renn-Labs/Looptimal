@@ -82,6 +82,22 @@ python3 "$LOOPPRINT_ROOT/scripts/loopprint-doctor.py"    # diagnose the install 
 Only `loopprint-lint.py` and profile parsing need PyYAML (`pip install pyyaml`); `ls` / `detect` / `report` are
 stdlib-only.
 
+### Platform notes (macOS / Windows)
+The `ln -s` commands above target **Linux and macOS** (and WSL), where they behave identically. On **native
+Windows**, `ln -s` isn't available and symlinks need elevation — use one of:
+
+- **WSL** — clone and link inside the Linux filesystem; everything behaves like Linux.
+- **Junction (no admin)** — `mklink /J "%USERPROFILE%\.claude\skills\loopprint" "%USERPROFILE%\loopprint"` (cmd).
+  A directory junction needs no Developer Mode or admin and still updates with a plain `git pull` of the clone.
+- **Symlink** — `mklink /D …` (cmd) or `New-Item -ItemType SymbolicLink …` (PowerShell); both need Developer Mode
+  or an elevated shell.
+- **Copy** — `xcopy /E /I %USERPROFILE%\loopprint %USERPROFILE%\.claude\skills\loopprint`; works anywhere, but
+  re-copy to pick up updates (no `git pull` propagation).
+- **Claude Code plugin** — `/plugin install loopprint@renn-labs` uses no symlink at all — the simplest path on Windows.
+
+The runner (`run-this-loop.sh`, `verify.sh`, `maker.sh`) is **bash**, so on Windows run loops under **WSL or Git
+Bash**, not native cmd/PowerShell. Where Python is `python` / `py` rather than `python3` on your PATH, use that.
+
 ## Use
 
 ```

@@ -1,0 +1,6 @@
+# Cross-platform line endings. Force LF in the working tree so a Windows checkout with
+# core.autocrlf=true can't corrupt the bash scripts — CRLF in a .sh file breaks bash
+# ("\r: command not found" / syntax errors). The runner/verifier/maker are bash.
+* text=auto eol=lf
+*.sh  text eol=lf
+*.png binary

@@ -189,6 +189,9 @@ def check_frontmatter(r: Report) -> None:
 
 
 def check_exec_bits(r: Report) -> None:
+    if os.name == "nt":  # Windows has no Unix exec bit — scripts are invoked as `python <script>.py`
+        r.add("exec_bits", "SKIP", "exec bits don't apply on Windows — invoke as `python <script>.py`")
+        return
     issues = []
     for rel in EXEC_SCRIPTS:
         p = ROOT / rel

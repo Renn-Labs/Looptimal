@@ -13,10 +13,18 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }} py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12"]
+        include:                       # cross-platform: the Python tools must run on macOS + Windows too
+          - os: macos-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.12"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,6 +32,25 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install pyyaml pytest
       - run: pytest -q
+
+  runner-smoke:
+    name: runner-smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]   # the bash runner: proves now_ms emits a numeric wall_ms on BSD/macOS date
+    steps:
+      - uses: actions/checkout@v4
+      - name: one-iteration loop emits a numeric wall_ms
+        shell: bash
+        run: |
+          L="$(mktemp -d)"
+          cp templates/run-this-loop.sh "$L"/
+          printf '#!/usr/bin/env bash\nset -euo pipefail\n[ -f done ]\n' > "$L/verify.sh"
+          printf '#!/usr/bin/env bash\nset -euo pipefail\ntouch done\n' > "$L/maker.sh"
+          ( cd "$L" && AUTONOMY=full bash run-this-loop.sh )
+          python3 -c "import json; r=json.loads(open('$L/metrics.jsonl').readline()); w=r['wall_ms']; assert isinstance(w,int) and w>=0, ('bad wall_ms', w); print('OK wall_ms=', w)"
 
   shellcheck:
     runs-on: ubuntu-latest

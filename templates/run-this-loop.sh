@@ -34,7 +34,13 @@ METRICS_ADAPTER="${METRICS_ADAPTER:-}"         # optional cmd: prints "<tokens> 
 log() { printf '%s  %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATE_FILE" >&2; }
 run_verifier() { bash "$VERIFIER"; }           # the ONLY thing that can declare success
 run_maker()    { bash "$MAKER"; }              # the maker, as its own process (maker != checker)
-now_ms() { date +%s%3N 2>/dev/null || echo $(( $(date +%s) * 1000 )); }
+now_ms() {                                     # epoch milliseconds, portably
+  local ms; ms=$(date +%s%3N 2>/dev/null)
+  case $ms in
+    ''|*[!0-9]*) echo $(( $(date +%s) * 1000 ));;  # BSD/macOS date has no %N -> non-numeric; use seconds
+    *) echo "$ms";;
+  esac
+}
 json_escape() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
 
 emit_metrics() { # iter wall_ms verifier_result accepted
