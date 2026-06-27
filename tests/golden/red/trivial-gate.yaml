@@ -1,0 +1,28 @@
+slug: trivial-gate
+created: 2026-06-26
+pattern: morty
+
+goal: >
+  The failing test on the current branch passes with no other test regressions.
+
+state:
+  path: loops/trivial-gate/state.md
+  records:
+    - attempt summary
+    - verifier result
+
+verifier:
+  kind: test
+  command: "true"
+  green_means: "the gate always passes"
+
+stop:
+  success: "verifier GREEN"
+  max_iterations: 5
+  budget:
+    tokens: null
+    wall_clock_minutes: 15
+  halt_file: loops/trivial-gate/HALT
+
+autonomy: full
+human_checkpoints: []

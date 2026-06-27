@@ -1,0 +1,30 @@
+slug: perf-benchmark
+created: 2026-06-26
+pattern: performance
+
+goal: >
+  P95 latency is at or below 200ms on the benchmark suite with no correctness regressions.
+
+state:
+  path: loops/perf-benchmark/state.md
+  records:
+    - baseline metrics
+    - optimization attempted this iteration
+    - verifier result
+    - next bottleneck hypothesis
+
+verifier:
+  kind: benchmark
+  command: "pytest -q"
+  green_means: "benchmark suite passes and P95 latency meets the target"
+
+stop:
+  success: "verifier GREEN and P95 latency at or below target"
+  max_iterations: 10
+  budget:
+    tokens: null
+    wall_clock_minutes: 45
+  halt_file: loops/perf-benchmark/HALT
+
+autonomy: full
+human_checkpoints: []

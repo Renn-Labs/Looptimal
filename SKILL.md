@@ -81,11 +81,16 @@ Create `loops/<slug>/` (slug = kebab-case of the goal) and write the package, fi
 | File | From template | Purpose |
 |-|-|-|
 | `loop-spec.yaml` | `templates/loop-spec.yaml` | The four atoms + pattern + budget, machine-readable |
-| `state.md` | `templates/state-template.md` | The durable State artifact (seed it with iteration 0) |
-| `run-this-loop.sh` | `templates/run-this-loop.sh` | Engine-agnostic runner; wire the verifier + stop in |
+| `state.md` | `templates/state-template.md` | The durable State artifact, human view (seed it with iteration 0) |
+| `maker.sh` | `templates/maker.sh` | The maker step — a SEPARATE process from verify.sh (maker ≠ checker) |
 | `verify.sh` | `templates/verification-hook.sh` | The external verifier as an exit-code gate |
+| `run-this-loop.sh` | `templates/run-this-loop.sh` | Engine-agnostic runner; emits `metrics.jsonl` + `state.jsonl` each iteration |
 | `safety-checklist.md` | `templates/safety-checklist.md` | Human checkpoints + budget guardrails |
 | `flow.mmd` | `templates/flow.mmd` | Mermaid diagram of this loop |
+
+After generation: preflight with `bash run-this-loop.sh --check`; once the loop has run, `loopprint-report.py
+loops/<slug>/metrics.jsonl` reports **cost-per-accepted-change**; `loopprint-skillify.py loops/<slug>` (Step 6
+"Save as skill") promotes a GREEN loop into a reusable skill. Pick a verifier from `templates/verifier-library.yaml`.
 
 If a heavy orchestrator (e.g. glueRun-go) is in play, also emit `templates/gluerun-snippet.yaml` adapted.
 

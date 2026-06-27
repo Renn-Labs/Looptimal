@@ -1,0 +1,38 @@
+slug: spec-driven-remediation
+created: 2026-06-26
+pattern: spec-driven
+
+goal: >
+  Bring the undertested `billing/invoice.py` module up to the derived spec in
+  `tests/spec/test_invoice_spec.py` — every spec case passes with no regressions
+  elsewhere in the suite.
+
+state:
+  path: loops/spec-driven-remediation/state.md
+  records:
+    - spec cases still RED and the assertion diff
+    - implementation change attempted this iteration
+    - verifier result
+    - next spec slice or edge case to tackle
+
+verifier:
+  kind: test
+  command: "pytest tests/spec -q"
+  green_means: "all derived spec cases pass — the module behavior matches the written spec"
+
+stop:
+  success: "verifier GREEN (spec suite passes)"
+  max_iterations: 8
+  budget:
+    tokens: null
+    wall_clock_minutes: 45
+  halt_file: loops/spec-driven-remediation/HALT
+
+autonomy: full
+human_checkpoints:
+  - "do not push or merge — spec and implementation changes land on the branch for human review only"
+
+integrations:
+  oh_my_claudecode: true
+  subagent_isolation: false
+  heavy_orchestrator: false

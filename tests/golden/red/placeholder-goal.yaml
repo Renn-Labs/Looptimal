@@ -1,0 +1,28 @@
+slug: placeholder-goal
+created: 2026-06-26
+pattern: morty
+
+goal: >
+  <one sentence, testable goal that must be filled in before running>
+
+state:
+  path: loops/placeholder-goal/state.md
+  records:
+    - attempt summary
+    - verifier result
+
+verifier:
+  kind: test
+  command: "pytest -q"
+  green_means: "the test suite passes"
+
+stop:
+  success: "verifier GREEN"
+  max_iterations: 5
+  budget:
+    tokens: null
+    wall_clock_minutes: 15
+  halt_file: loops/placeholder-goal/HALT
+
+autonomy: full
+human_checkpoints: []

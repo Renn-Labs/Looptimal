@@ -1,0 +1,23 @@
+slug: no-stop
+created: 2026-06-26
+pattern: morty
+
+goal: >
+  The failing test on the current branch passes with no other test regressions.
+
+state:
+  path: loops/no-stop/state.md
+  records:
+    - attempt summary
+    - verifier result
+
+verifier:
+  kind: test
+  command: "pytest -q"
+  green_means: "the test suite passes"
+
+stop:
+  success: "verifier GREEN"
+
+autonomy: full
+human_checkpoints: []

@@ -89,13 +89,20 @@ Say **"skip wizard"** (or "direct run") to bypass the interview and generate str
 A self-contained, runnable package per loop:
 
 - `loop-spec.yaml` — the four atoms + pattern + budget guardrails, machine-readable
-- `state.md` — the durable State artifact, updated every iteration
-- `run-this-loop.sh` — an engine-agnostic runner (optional hooks for oh-my-claudecode or your own orchestrator)
+- `maker.sh` — the maker step, run as a **separate process** from the verifier (maker ≠ checker, structurally)
 - `verify.sh` — the external verifier (exit-code gate)
+- `state.md` — the durable State artifact (human view), updated every iteration
+- `run-this-loop.sh` — an engine-agnostic runner; emits `metrics.jsonl` + `state.jsonl` (append-only) each iteration
 - `safety-checklist.md` — human checkpoints + budget limits
 - `flow.mmd` — a Mermaid diagram of the loop
 
-See [`templates/`](templates/) for the blanks and [`examples/ci-triage/`](examples/ci-triage/) for a worked one.
+Plus tooling: `loopprint-lint.py` gates the spec, `loopprint-report.py` computes **cost-per-accepted-change** from
+`metrics.jsonl`, and `loopprint-skillify.py` promotes a GREEN loop into a reusable skill. Common verifier recipes
+live in [`templates/verifier-library.yaml`](templates/verifier-library.yaml); preflight a loop with
+`run-this-loop.sh --check`.
+
+See [`templates/`](templates/) for the blanks and [`examples/`](examples/) for worked ones (ci-triage,
+spec-driven-remediation, perf-optimization, hybrid).
 
 ## Pattern library
 

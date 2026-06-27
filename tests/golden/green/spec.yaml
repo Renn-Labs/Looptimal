@@ -1,0 +1,31 @@
+slug: spec-driven-feature
+created: 2026-06-26
+pattern: spec-driven
+
+goal: >
+  The feature spec is implemented and all acceptance criteria pass automated checks.
+
+state:
+  path: loops/spec-driven-feature/state.md
+  records:
+    - acceptance criterion under test
+    - implementation attempt summary
+    - verifier result
+    - remaining gaps
+
+verifier:
+  kind: test
+  command: "pytest -q"
+  green_means: "every acceptance criterion has a passing automated check"
+
+stop:
+  success: "verifier GREEN and spec checklist complete"
+  max_iterations: 8
+  budget:
+    tokens: null
+    wall_clock_minutes: 30
+  halt_file: loops/spec-driven-feature/HALT
+
+autonomy: checkpoint
+human_checkpoints:
+  - "schema or API contract changes require human approval before merge"

@@ -1,0 +1,39 @@
+slug: hybrid
+created: 2026-06-26
+pattern: hybrid
+
+goal: >
+  Fix the perf-related bug where `/api/export` times out on large datasets while
+  still meeting the export spec in `tests/spec/test_export_spec.py` — repro
+  green, spec green, and p95 within budget.
+
+state:
+  path: loops/hybrid/state.md
+  records:
+    - repro test status and timeout symptoms
+    - spec cases still RED
+    - benchmark p95 after the fix attempt
+    - next hypothesis
+
+verifier:
+  kind: composite
+  command: "bash examples/hybrid/verify.sh"
+  green_means: "repro test passes, export spec passes, and export p95 <= 5000 ms"
+
+stop:
+  success: "verifier GREEN (repro + spec + benchmark all pass)"
+  max_iterations: 7
+  budget:
+    tokens: null
+    wall_clock_minutes: 40
+  halt_file: loops/hybrid/HALT
+
+autonomy: full
+human_checkpoints:
+  - "do not push or merge — bugfix and spec changes land on the branch for human review only"
+  - "do not weaken the repro fixture or skip benchmark assertions to force green"
+
+integrations:
+  oh_my_claudecode: true
+  subagent_isolation: false
+  heavy_orchestrator: false

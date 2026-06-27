@@ -24,6 +24,8 @@ except ImportError:  # pragma: no cover
     sys.exit(2)
 
 VALID_PATTERNS = {"morty", "spec-driven", "performance", "hybrid"}
+SCHEMA_VERSION = 1  # highest loop-spec schema version this linter understands
+VALID_CHECKPOINT_MODES = {"before", "after"}
 
 # Phrases that mean "the maker graded its own work" — the defect LoopPrint exists to prevent.
 SELF_GRADE = re.compile(
@@ -75,6 +77,19 @@ def lint_spec(spec: dict) -> list[str]:
     if pat not in VALID_PATTERNS:
         f.append(f"pattern: '{pat}' not one of {sorted(VALID_PATTERNS)}.")
 
+    # schema_version — optional for back-compat; if present it must be an int this linter understands.
+    sv = spec.get("schema_version")
+    if sv is not None:
+        if not (isinstance(sv, int) and not isinstance(sv, bool) and sv >= 1):
+            f.append(f"schema_version: '{sv}' is not a positive integer.")
+        elif sv > SCHEMA_VERSION:
+            f.append(f"schema_version: {sv} is newer than this linter supports ({SCHEMA_VERSION}) — upgrade loopprint.")
+
+    # checkpoint_mode — optional; 'before' = authorize each step, 'after' = review each result.
+    cm = spec.get("checkpoint_mode")
+    if cm is not None and str(cm).strip().lower() not in VALID_CHECKPOINT_MODES:
+        f.append(f"checkpoint_mode: '{cm}' must be one of {sorted(VALID_CHECKPOINT_MODES)}.")
+
     # State — needs a durable path.
     state = _as_dict(spec.get("state"))
     if _is_blank(state.get("path")) or PLACEHOLDER.search(str(state.get("path", ""))):
@@ -118,6 +133,7 @@ def main(argv: list[str]) -> int:
         print("usage: loopprint-lint.py <loop-spec.yaml> [<more.yaml> ...]", file=sys.stderr)
         return 2
     bad = 0
+    slugs: dict[str, str] = {}  # slug -> first spec path that used it (collision = shared loops/<slug>/ dir)
     for p in paths:
         try:
             with open(p) as fh:
@@ -131,6 +147,14 @@ def main(argv: list[str]) -> int:
             bad += 1
             continue
         findings = lint_spec(spec)
+        # Slug uniqueness across the specs given in one run — two loops sharing a slug collide on loops/<slug>/.
+        slug = spec.get("slug")
+        if isinstance(slug, str) and slug.strip():
+            if slug in slugs:
+                findings = findings + [f"slug: '{slug}' is not unique — also used by {slugs[slug]}. "
+                                       "Each loop needs its own slug (and its own directory)."]
+            else:
+                slugs[slug] = p
         if findings:
             bad += 1
             print(f"RED  {p}:")

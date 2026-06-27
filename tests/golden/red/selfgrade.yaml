@@ -1,0 +1,28 @@
+slug: selfgrade
+created: 2026-06-26
+pattern: morty
+
+goal: >
+  The failing test on the current branch passes with no other test regressions.
+
+state:
+  path: loops/selfgrade/state.md
+  records:
+    - attempt summary
+    - verifier result
+
+verifier:
+  kind: test
+  command: "claude says it looks good"
+  green_means: "the agent confirms the fix is correct"
+
+stop:
+  success: "verifier GREEN"
+  max_iterations: 5
+  budget:
+    tokens: null
+    wall_clock_minutes: 15
+  halt_file: loops/selfgrade/HALT
+
+autonomy: full
+human_checkpoints: []

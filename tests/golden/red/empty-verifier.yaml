@@ -1,0 +1,23 @@
+slug: empty-verifier
+created: 2026-06-26
+pattern: morty
+
+goal: >
+  The failing test on the current branch passes with no other test regressions.
+
+state:
+  path: loops/empty-verifier/state.md
+  records:
+    - attempt summary
+    - verifier result
+
+stop:
+  success: "verifier GREEN"
+  max_iterations: 5
+  budget:
+    tokens: null
+    wall_clock_minutes: 15
+  halt_file: loops/empty-verifier/HALT
+
+autonomy: full
+human_checkpoints: []

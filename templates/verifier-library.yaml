@@ -1,0 +1,105 @@
+# verifier-library.yaml — copy-paste recipes for verify.sh
+# Each snippet is an EXTERNAL gate: exit 0 = GREEN, non-zero = RED.
+# Paste into loops/<slug>/verify.sh; never eval a command string from loop-spec.yaml.
+
+recipes:
+  - id: test-suite
+    kind: test
+    use_when: Spec-Driven or any loop whose done-state is "the derived test suite passes."
+    snippet: |
+      set -euo pipefail
+      # Adapt to your stack (pytest -q, go test ./..., cargo test, npm test, etc.).
+      npm test --silent
+      echo "verify: test-suite GREEN"
+    green_means: Every test in the suite exits cleanly — the system's behavior matches what the tests encode.
+    caveats: A suite that doesn't cover the goal can pass while the loop misses the real requirement. Keep tests derived from the spec, not from the maker's narrative.
+
+  - id: lint-clean
+    kind: lint
+    use_when: The goal is "code meets style/static-analysis rules" with no behavioral test gate yet.
+    snippet: |
+      set -euo pipefail
+      # Adapt to your stack (eslint, ruff check ., golangci-lint run, shellcheck, etc.).
+      npm run lint --silent
+      echo "verify: lint-clean GREEN"
+    green_means: The linter reports zero errors under the project's configured rules.
+    caveats: Lint green does not prove correctness — pair with a test or build gate when behavior matters.
+
+  - id: build
+    kind: build
+    use_when: The goal is "artifact compiles/packages" and a successful build is the objective external signal.
+    snippet: |
+      set -euo pipefail
+      # Adapt to your stack (cargo build, go build ./..., npm run build, make, etc.).
+      npm run build --silent
+      echo "verify: build GREEN"
+    green_means: The project builds without error — types, imports, and packaging constraints are satisfied.
+    caveats: Build success alone does not prove runtime behavior; add a test gate when the goal is functional correctness.
+
+  - id: repro-test
+    kind: repro
+    use_when: MORTY pattern — a specific bug must stop reproducing and the broader suite must not regress.
+    snippet: |
+      set -euo pipefail
+      # Gate 1 — the reproduction MUST pass (tight, cause-focused test).
+      pytest tests/test_repro_issue_123.py -q
+      # Gate 2 — full suite MUST pass (no regressions from the minimal fix).
+      pytest -q
+      echo "verify: repro-test GREEN (repro passes, suite passes)"
+    green_means: The failing reproduction is fixed AND no previously-green test regressed.
+    caveats: A repro that only checks the symptom can go green while the root cause survives — keep the repro tight enough that only a real fix passes both gates.
+
+  - id: benchmark-threshold
+    kind: benchmark
+    use_when: Performance pattern — a metric must meet a numeric target AND correctness must hold.
+    snippet: |
+      set -euo pipefail
+      # Gate 1 — measure metric under a fixed, repeatable benchmark (adapt script/field names).
+      p95_ms=$(./bench.sh --json | python3 -c 'import sys,json; print(json.load(sys.stdin)["p95_ms"])')
+      target_ms=150
+      if [ "$p95_ms" -gt "$target_ms" ]; then
+        echo "verify: benchmark FAIL p95=${p95_ms}ms > target=${target_ms}ms" >&2
+        exit 1
+      fi
+      # Gate 2 — correctness suite MUST still pass (non-negotiable; runs every iteration).
+      npm test --silent
+      echo "verify: benchmark-threshold GREEN (p95=${p95_ms}ms <= ${target_ms}ms, suite GREEN)"
+    green_means: The measured metric is at or below the target AND the correctness suite is fully green.
+    caveats: Benchmarks drift if inputs/hardware aren't pinned — fix the workload and environment. Never accept a faster number that breaks behavior; both gates must pass.
+
+  - id: llm-rubric-judge
+    kind: rubric
+    use_when: Output quality must be scored against a written rubric and no deterministic test exists.
+    snippet: |
+      set -euo pipefail
+      RUBRIC="loops/<slug>/rubric.yaml"
+      ARTIFACT="loops/<slug>/artifact.md"
+      THRESHOLD=80
+      # JUDGE_CMD must invoke a DIFFERENT model/agent/context than the maker — never self-grade.
+      JUDGE="./scripts/rubric-judge.sh"
+      score=$("$JUDGE" --rubric "$RUBRIC" --artifact "$ARTIFACT")
+      if [ "$score" -lt "$THRESHOLD" ]; then
+        echo "verify: rubric-judge FAIL score=${score} < threshold=${THRESHOLD}" >&2
+        exit 1
+      fi
+      echo "verify: rubric-judge GREEN score=${score} >= ${THRESHOLD}"
+    green_means: An independent judge scored the artifact at or above the rubric threshold on every scored dimension.
+    caveats: The judge MUST be a different model, agent, or isolated context from the maker (judge ≠ maker). Same-session self-review is not a verifier. Rubric drift and judge inconsistency are real — log scores to state and re-run on boundary cases.
+
+  - id: human-vote
+    kind: human
+    use_when: A named human must approve before the loop may report GREEN (irreversible or judgment-heavy work).
+    snippet: |
+      set -euo pipefail
+      VOTE_FILE="loops/<slug>/human-approval"
+      if [ ! -f "$VOTE_FILE" ]; then
+        echo "verify: awaiting human approval — create ${VOTE_FILE} containing exactly: APPROVED" >&2
+        exit 1
+      fi
+      if [ "$(tr -d '[:space:]' < "$VOTE_FILE")" != "APPROVED" ]; then
+        echo "verify: human vote not APPROVED (found: $(cat "$VOTE_FILE"))" >&2
+        exit 1
+      fi
+      echo "verify: human-vote GREEN"
+    green_means: A human reviewer explicitly recorded APPROVED in the vote file.
+    caveats: This makes the loop a checkpointed workflow, not a fully autonomous loop — the runner blocks until a human acts. The human is external by definition (maker ≠ checker), but throughput depends on human availability.

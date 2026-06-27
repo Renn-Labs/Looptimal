@@ -1,0 +1,31 @@
+slug: morty-fix
+created: 2026-06-26
+pattern: morty
+
+goal: >
+  The failing test on the current branch passes with no other test regressing.
+
+state:
+  path: loops/morty-fix/state.md
+  records:
+    - which test failed and the error
+    - the fix attempted this iteration
+    - verifier result
+    - next hypothesis
+
+verifier:
+  kind: test
+  command: "pytest -q"
+  green_means: "the previously-failing test passes and nothing else regressed"
+
+stop:
+  success: "verifier GREEN (full suite passes)"
+  max_iterations: 6
+  budget:
+    tokens: null
+    wall_clock_minutes: 20
+  halt_file: loops/morty-fix/HALT
+
+autonomy: full
+human_checkpoints:
+  - "do not push or merge — fixes land on the branch for human review only"
