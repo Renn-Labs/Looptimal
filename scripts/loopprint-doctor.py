@@ -431,10 +431,15 @@ def check_assets(r: Report) -> None:
 
 def check_invocation(r: Report) -> None:
     # The tools ship with no installed `loopprint` binary by design — they run from this clone.
-    # Surface the canonical, copy-pasteable command so a user (and their CI) has a stable path.
-    if (ROOT / "scripts" / "loopprint-ls.py").is_file():
-        r.add("invocation", "INFO", "tools run from this clone (no PATH binary by design)",
-              f'loop health:  LOOPPRINT_ROOT="{ROOT}" python3 "$LOOPPRINT_ROOT/scripts/loopprint-ls.py"')
+    # Surface the canonical, copy-pasteable command (platform-aware) so a user (and their CI) has a stable path.
+    if not (ROOT / "scripts" / "loopprint-ls.py").is_file():
+        return
+    if os.name == "nt":
+        cmd = f'set "LOOPPRINT_ROOT={ROOT}" && python "%LOOPPRINT_ROOT%\\scripts\\loopprint-ls.py"'
+    else:
+        cmd = f'LOOPPRINT_ROOT="{ROOT}" python3 "$LOOPPRINT_ROOT/scripts/loopprint-ls.py"'
+    r.add("invocation", "INFO", "tools run from this clone (no PATH binary by design)",
+          f"loop health:  {cmd}")
 
 
 CHECKS = [

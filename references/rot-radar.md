@@ -27,15 +27,17 @@ backfills happen; the runner appends in order.
 ## The states
 | Status | Means | Rule |
 |-|-|-|
-| **HEALTHY** | ran recently, last verdict GREEN (or a short red run) | default |
-| **RUNNING** | a live iteration in progress | wrote within `--running-grace` (120 s) **and** last verdict RED |
-| **ROTTEN** | failing repeatedly — fix it | `red_streak >= K` (`--rot-streak`, default 3) and ran within N days |
+| **HEALTHY** | ran recently and has gone GREEN | default |
+| **RUNNING** | a run is live right now | the runner holds a `.running` lock **and** wrote within `--running-grace` (120 s) |
+| **PENDING** | ran recently but has never passed yet | recent, `red_streak < K`, not running, never GREEN |
+| **ROTTEN** | failing repeatedly — fix it | `red_streak >= K` (`--rot-streak`, default 3), recent, not running |
 | **STALE** | the automation went quiet | no run in > N days (`--stale-days`, default 14) |
-| **UNKNOWN** | no usable history | reason: `never_run` (spec, no runs) · `parse_error` (bad metrics) · `no_data` |
+| **UNKNOWN** | can't assess | reason: `never_run` · `no_verdict` (ran, only SKIP lines) · `no_timestamp` · `parse_error` · `no_data` |
 
-Precedence (mutually exclusive): UNKNOWN → RUNNING → STALE → ROTTEN → HEALTHY. **STALE outranks ROTTEN** so a
-dormant loop reads as "stopped," not "actively failing"; **RUNNING outranks ROTTEN** so a mid-run red streak
-doesn't false-trip `--exit-nonzero-if-rotten` in CI.
+Precedence (mutually exclusive): UNKNOWN → RUNNING → STALE → ROTTEN → PENDING → HEALTHY. A live run is detected by
+a `.running` lock the runner holds, so a **terminal** RED loop is *not* masked — it reaches ROTTEN, which is the
+point of `--exit-nonzero-if-rotten`. **STALE outranks ROTTEN** so a dormant loop reads as "stopped," not "actively
+failing."
 
 ## Wire it into CI / cron
 Fail a scheduled job when a loop has silently rotted:
@@ -49,6 +51,7 @@ should be passing is now failing" signal, not a noisy one.
 - Health comes from each loop's *own* run history. No global/cross-repo aggregation, no telemetry — nothing
   leaves your machine.
 - A marker-only loop (an OMC verifier marker, no jsonl) yields a last verdict but not a long streak: a recent RED
-  marker is treated as ROTTEN; a longer streak needs `metrics.jsonl`/`state.jsonl` history.
+  marker is treated as ROTTEN; a longer streak needs `metrics.jsonl`/`state.jsonl` history. The marker is matched
+  **exactly** by slug (no fuzzy filename matching), so it resolves only when the marker is named for this loop.
 - `state.jsonl` carries `verifier_result` + `ts` but not `wall_ms`/`accepted` (it is the checkpoint log), so `ls`
   reads only the color and timestamp from it.

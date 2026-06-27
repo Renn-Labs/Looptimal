@@ -24,6 +24,8 @@ VERIFIER="${VERIFIER:-verify.sh}"              # external gate: exits 0 = GREEN.
 MAKER="${MAKER:-maker.sh}"                      # the maker step: one change toward the goal. Its own process.
 MAX_ITERS="${MAX_ITERS:-10}"
 HALT_FILE="${HALT_FILE:-HALT}"
+RUN_LOCK="${RUN_LOCK:-.running}"               # present only while this run is live; loopprint-ls uses it to tell
+                                              # a live RED streak from a terminal one (don't false-report ROTTEN)
 AUTONOMY="${AUTONOMY:-checkpoint}"             # full | checkpoint | dry-run
 CHECKPOINT_MODE="${CHECKPOINT_MODE:-before}"   # before = authorize each iteration; after = review each result
 METRICS_FILE="${METRICS_FILE:-metrics.jsonl}"  # append-only per-iteration metrics; feeds loopprint-report.py
@@ -91,6 +93,11 @@ if [ "$AUTONOMY" = "checkpoint" ] && [ ! -t 0 ]; then
   log "ERROR: autonomy=checkpoint needs a TTY, but stdin is not interactive (e.g. CI). Set AUTONOMY=full to run unattended."
   exit 5
 fi
+
+# Mark this run as live so `loopprint ls` won't misread an in-progress RED streak as ROTTEN.
+# The trap clears it on any exit (normal, GREEN, max-iters, HALT, signal).
+: > "$RUN_LOCK"
+trap 'rm -f "$RUN_LOCK"' EXIT INT TERM
 
 # Verify-first: if the goal is already met, do nothing.
 if run_verifier; then

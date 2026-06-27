@@ -31,13 +31,15 @@ def _rec(i, res, dt):
                        "verifier_result": res, "accepted": res == "GREEN"})
 
 
-def _mk_loop(root: Path, slug: str, lines=None, spec=True, fname="metrics.jsonl"):
+def _mk_loop(root: Path, slug: str, lines=None, spec=True, fname="metrics.jsonl", running=False):
     d = root / "loops" / slug
     d.mkdir(parents=True)
     if spec:
         (d / "loop-spec.yaml").write_text(f"slug: {slug}\n")
     if lines is not None:
         (d / fname).write_text("\n".join(lines) + "\n")
+    if running:
+        (d / ".running").write_text("")          # the lock the runner holds while a run is live
     return d
 
 
@@ -63,21 +65,71 @@ def test_all_states_classified(tmp_path):
     _mk_loop(tmp_path, "stale", [_rec(1, "GREEN", now - timedelta(days=30))])
     _mk_loop(tmp_path, "running", [_rec(1, "RED", now - timedelta(hours=1)),
                                    _rec(2, "RED", now - timedelta(hours=1)),
-                                   _rec(3, "RED", now - timedelta(seconds=5))])
+                                   _rec(3, "RED", now - timedelta(seconds=5))], running=True)
     _mk_loop(tmp_path, "never", None)
     st = _statuses(tmp_path)
     assert st["healthy"][0] == "HEALTHY"
     assert st["rotten"][0] == "ROTTEN"
     assert st["stale"][0] == "STALE"
-    assert st["running"][0] == "RUNNING"          # recent RED is a live iteration, not ROTTEN
+    assert st["running"][0] == "RUNNING"          # live run holds the .running lock
     assert st["never"] == ("UNKNOWN", "never_run")
 
 
-def test_running_guard_prevents_false_rotten(tmp_path):
-    """A loop mid-run with a trailing RED streak must NOT be ROTTEN (would false-trip CI)."""
+def test_running_requires_lock_else_rotten(tmp_path):
+    """A recent RED streak is RUNNING only while the runner holds the .running lock. A TERMINAL RED loop
+    (no lock) MUST reach ROTTEN — otherwise --exit-nonzero-if-rotten silently misses a fast-failing loop."""
     now = datetime.now(timezone.utc)
-    _mk_loop(tmp_path, "midrun", [_rec(1, "RED", now), _rec(2, "RED", now), _rec(3, "RED", now)])
-    assert _statuses(tmp_path)["midrun"][0] == "RUNNING"
+    reds = [_rec(1, "RED", now), _rec(2, "RED", now), _rec(3, "RED", now)]
+    _mk_loop(tmp_path, "live", reds, running=True)
+    _mk_loop(tmp_path, "dead", reds, running=False)      # finished failing — no lock
+    st = _statuses(tmp_path)
+    assert st["live"][0] == "RUNNING"
+    assert st["dead"][0] == "ROTTEN"
+    assert _run(tmp_path, "--exit-nonzero-if-rotten").returncode == 1   # the terminal one trips CI
+
+
+def test_pending_when_never_green(tmp_path):
+    """A recent loop that has never gone GREEN and isn't chronically failing is PENDING, not HEALTHY."""
+    now = datetime.now(timezone.utc)
+    _mk_loop(tmp_path, "newish", [_rec(1, "RED", now - timedelta(minutes=5)),
+                                  _rec(2, "RED", now - timedelta(minutes=4))])
+    assert _statuses(tmp_path)["newish"][0] == "PENDING"
+
+
+def test_skip_only_is_no_verdict(tmp_path):
+    now = datetime.now(timezone.utc)
+    d = tmp_path / "loops" / "dry"
+    d.mkdir(parents=True)
+    (d / "loop-spec.yaml").write_text("slug: dry\n")
+    (d / "metrics.jsonl").write_text(json.dumps({"iter": 1, "ts": _iso(now), "verifier_result": "SKIP"}) + "\n")
+    assert _statuses(tmp_path)["dry"] == ("UNKNOWN", "no_verdict")
+
+
+def test_corrupt_metrics_falls_through_to_state(tmp_path):
+    """A corrupt metrics.jsonl must not stop the ladder — a valid state.jsonl still classifies the loop."""
+    now = datetime.now(timezone.utc)
+    d = tmp_path / "loops" / "ladder"
+    d.mkdir(parents=True)
+    (d / "metrics.jsonl").write_text("{corrupt\n")
+    (d / "state.jsonl").write_text(_rec(1, "GREEN", now - timedelta(minutes=1)) + "\n")
+    assert _statuses(tmp_path)["ladder"][0] == "HEALTHY"
+
+
+def test_missing_timestamp_is_unknown(tmp_path):
+    d = tmp_path / "loops" / "nots"
+    d.mkdir(parents=True)
+    (d / "metrics.jsonl").write_text(json.dumps({"iter": 1, "verifier_result": "RED", "ts": None}) + "\n")
+    assert _statuses(tmp_path)["nots"] == ("UNKNOWN", "no_timestamp")
+
+
+def test_resolve_marker_is_exact_not_substring(tmp_path):
+    """The verifier marker must match this slug exactly — a substring glob would pick another loop's marker."""
+    (tmp_path / ".omc" / "state").mkdir(parents=True)
+    (tmp_path / ".omc" / "state" / "pricing-verifier.json").write_text('{"result":"RED"}')
+    tmpl = ".omc/state/<mode>-verifier.json"
+    assert ls._resolve_marker(tmpl, "ci", tmp_path) is None          # 'ci' must NOT match 'pricing-...'
+    (tmp_path / ".omc" / "state" / "ci-verifier.json").write_text('{"result":"GREEN"}')
+    assert ls._resolve_marker(tmpl, "ci", tmp_path) is not None      # exact slug match resolves
 
 
 # ---- malformed tolerance ----------------------------------------------------
@@ -132,6 +184,7 @@ def test_red_streak_is_append_order_not_timestamp():
 def test_root_from_state_dir_strips_slug():
     assert ls._root_from_state_dir("loops/<slug>") == "loops"
     assert ls._root_from_state_dir(".omc/loops/<slug>") == ".omc/loops"
+    assert ls._root_from_state_dir("loops\\<slug>") == "loops"        # Windows backslash separator
     assert ls._root_from_state_dir("") is None
 
 
