@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Read CONTRIBUTING first
+    url: https://github.com/Renn-Labs/LoopPrint/blob/main/CONTRIBUTING.md
+    about: Setup, the hard invariants to respect, and the bar for a PR.
+  - name: Security issue?
+    url: https://github.com/Renn-Labs/LoopPrint/blob/main/SECURITY.md
+    about: Please follow the security policy instead of filing a public issue.
