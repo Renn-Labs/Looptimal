@@ -6,15 +6,27 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Generated loop artifacts (the wizard writes these into the *consuming* repo, not here)
+# Generated loop artifacts + local harness state (the wizard writes these into the *consuming*
+# repo, not here). Self-contained on purpose — don't rely on a contributor's global excludes.
 loops/
 .loops/
 .omc/
+.omx/
+# .loopprint/ is a user's local harness binding (profile.yaml) — never distribute it.
+.loopprint/
 
 # Language tooling
 __pycache__/
 *.pyc
+.pytest_cache/
 .venv/
 venv/
 node_modules/
 *.log
+
+# Local editor / agent state + machine-specific symlinks (kept out of the public distro).
+# Note: .claude-plugin/ IS tracked and distributed; only local .claude/ state is ignored.
+# /LoopPrint is a machine-local self-symlink from the repo rename (safe to delete).
+.claude/
+.patchright/
+/LoopPrint
