@@ -1,5 +1,6 @@
 {
   "name": "renn-labs",
+  "description": "Renn Labs' Claude Code marketplace — home of LoopPrint, the loop-design wizard that turns a vague goal into a runnable, self-verifying loop blueprint.",
   "owner": {
     "name": "Renn Labs",
     "url": "https://github.com/Renn-Labs"
