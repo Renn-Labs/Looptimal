@@ -208,3 +208,18 @@ def test_ratchet_resume_elapsed_from_metrics_ts():
         assert r.returncode == 6, (
             f"expected exit 6 (budget from resumed elapsed), got {r.returncode}\nstderr={r.stderr}"
         )
+
+
+def test_ratchet_warns_when_advance_unset():
+    """Ratchet shape with no RATCHET_ADVANCE wired → loud warning, not a silent no-op ratchet."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        _setup(tmp)
+        _write_sh(tmp, "verify.sh", "exit 0")
+        _write_sh(tmp, "maker.sh", "exit 0")
+
+        r = _run(tmp, env_extra={"VERIFIER_SHAPE": "ratchet", "MAX_ITERS": "1"})
+
+        assert "RATCHET_ADVANCE is unset" in r.stderr, (
+            f"expected a no-op-ratchet warning on stderr, got:\n{r.stderr}"
+        )

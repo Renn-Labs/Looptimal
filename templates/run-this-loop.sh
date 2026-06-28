@@ -36,7 +36,8 @@ VERIFIER_SHAPE="${VERIFIER_SHAPE:-gate}"       # gate | ratchet. ratchet = "no w
                                                # the loop stops only on budget / max-iters, advance tightens post-accept.
 RATCHET_ADVANCE="${RATCHET_ADVANCE:-}"         # ratchet only: sibling script that tightens the baseline after an
                                                # accepted GREEN. Its own process; the runner never writes the baseline.
-BUDGET_MIN="${BUDGET_MIN:-}"                   # ratchet wall-clock cap, minutes (hard stop, exit 6). Empty => no cap.
+BUDGET_MIN="${BUDGET_MIN:-}"                   # wall-clock cap in minutes (hard stop, exit 6). Any shape; mainly for
+                                               # ratchet/persistent loops that don't stop on GREEN. Empty => no cap.
 
 log() { printf '%s  %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATE_FILE" >&2; }
 run_verifier() { bash "$VERIFIER"; }           # the ONLY thing that can declare success
@@ -84,7 +85,11 @@ if [ "${1:-}" = "--check" ] || [ "${1:-}" = "--check-verifier" ]; then
   rc=0
   checks=("$VERIFIER" "$MAKER")
   # Under ratchet, the advance script is a load-bearing 3rd role — preflight it too (BUG-G).
-  if [ "$VERIFIER_SHAPE" = ratchet ] && [ -n "$RATCHET_ADVANCE" ]; then checks+=("$RATCHET_ADVANCE"); fi
+  # If the shape is ratchet but no advance is wired, the baseline can never tighten — warn rather than pass silently.
+  if [ "$VERIFIER_SHAPE" = ratchet ]; then
+    if [ -n "$RATCHET_ADVANCE" ]; then checks+=("$RATCHET_ADVANCE")
+    else echo "WARNING: VERIFIER_SHAPE=ratchet but RATCHET_ADVANCE is unset — the baseline will never tighten." >&2; fi
+  fi
   for s in "${checks[@]}"; do
     if [ ! -f "$s" ]; then echo "MISSING: $s" >&2; rc=1; continue; fi
     if ! bash -n "$s" 2>/dev/null; then echo "NOT RUNNABLE: $s (syntax error)" >&2; rc=1; continue; fi
@@ -121,6 +126,13 @@ fi
 
 log "START goal=\"$GOAL\" max_iters=$MAX_ITERS autonomy=$AUTONOMY checkpoint_mode=$CHECKPOINT_MODE"
 
+# A ratchet with no advance step never tightens the baseline — it just burns budget (a no-op loop). That silent
+# no-op is exactly the failure LoopPrint exists to prevent, so surface it loudly at the start (don't fail: an
+# unwired ratchet can be intentional mid-setup).
+if [ "$VERIFIER_SHAPE" = ratchet ] && [ -z "$RATCHET_ADVANCE" ]; then
+  log "WARNING: VERIFIER_SHAPE=ratchet but RATCHET_ADVANCE is unset — the baseline will never tighten (no-op ratchet)."
+fi
+
 # checkpoint autonomy needs an interactive terminal; refuse rather than hang/exit silently in CI.
 if [ "$AUTONOMY" = "checkpoint" ] && [ ! -t 0 ]; then
   log "ERROR: autonomy=checkpoint needs a TTY, but stdin is not interactive (e.g. CI). Set AUTONOMY=full to run unattended."
@@ -148,7 +160,11 @@ while :; do
   [ -f "$HALT_FILE" ] && { log "HALT file present — stopping."; exit 3; }
   if budget_exceeded; then log "STOP: wall-clock budget ${BUDGET_MIN}m reached."; exit 6; fi
   iter=$((iter + 1))
-  if [ "$iter" -gt "$MAX_ITERS" ]; then log "STOP: hit max_iterations ($MAX_ITERS) without GREEN."; exit 2; fi
+  if [ "$iter" -gt "$MAX_ITERS" ]; then
+    if [ "$VERIFIER_SHAPE" = ratchet ]; then log "STOP: hit max_iterations ($MAX_ITERS) — ratchet stop reached."
+    else log "STOP: hit max_iterations ($MAX_ITERS) without GREEN."; fi
+    exit 2
+  fi
   log "--- iteration $iter ---"
 
   # checkpoint BEFORE = authorize the iteration up front.
