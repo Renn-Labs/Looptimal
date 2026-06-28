@@ -8,8 +8,6 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parent.parent
 RUNNER = ROOT / "templates" / "run-this-loop.sh"
 
@@ -90,13 +88,10 @@ def test_gate_green_after_one_maker():
 
 
 # ===========================================================================
-# Group B — RATCHET BEHAVIOR (xfail strict; Step 2 makes these pass)
+# Group B — RATCHET BEHAVIOR (Step 2 landed — these now pass)
 # ===========================================================================
 
-_XFAIL = pytest.mark.xfail(strict=True, reason="ratchet behavior lands in Step 2")
 
-
-@_XFAIL
 def test_ratchet_no_early_exit_on_first_green():
     """Ratchet: always-GREEN verify does NOT exit at first GREEN; runs MAX_ITERS=3 iters, exit 2."""
     with tempfile.TemporaryDirectory() as d:
@@ -112,7 +107,6 @@ def test_ratchet_no_early_exit_on_first_green():
         assert len(loop_rows) == 3, f"expected 3 loop rows, got {loop_rows}"
 
 
-@_XFAIL
 def test_ratchet_pre_loop_green_does_not_early_exit():
     """Ratchet: pre-loop GREEN does not exit early; proceeds into loop and hits max-iters (exit 2)."""
     with tempfile.TemporaryDirectory() as d:
@@ -127,7 +121,6 @@ def test_ratchet_pre_loop_green_does_not_early_exit():
         assert r.returncode == 2, f"expected exit 2, got {r.returncode}\nstderr={r.stderr}"
 
 
-@_XFAIL
 def test_ratchet_stops_on_budget():
     """Ratchet: BUDGET_MIN=0 triggers wall-clock budget stop (exit 6) before any iteration."""
     with tempfile.TemporaryDirectory() as d:
@@ -141,7 +134,6 @@ def test_ratchet_stops_on_budget():
         assert r.returncode == 6, f"expected exit 6 (budget), got {r.returncode}\nstderr={r.stderr}"
 
 
-@_XFAIL
 def test_ratchet_advance_invoked_on_accept():
     """Ratchet: GREEN accepted iter → advance script called (sentinel appears); metrics row accepted=true."""
     with tempfile.TemporaryDirectory() as d:
@@ -163,7 +155,6 @@ def test_ratchet_advance_invoked_on_accept():
         assert loop_rows[0]["accepted"] is True
 
 
-@_XFAIL
 def test_ratchet_advance_failure_honest_audit():
     """Ratchet: advance exits non-zero → that iter's metrics row has accepted=false (honest audit)."""
     with tempfile.TemporaryDirectory() as d:
@@ -187,7 +178,6 @@ def test_ratchet_advance_failure_honest_audit():
         )
 
 
-@_XFAIL
 def test_ratchet_resume_elapsed_from_metrics_ts():
     """Ratchet --resume: elapsed from first metrics ts (not process start); 2-hour-old ts + BUDGET_MIN=1 → exit 6."""
     with tempfile.TemporaryDirectory() as d:
