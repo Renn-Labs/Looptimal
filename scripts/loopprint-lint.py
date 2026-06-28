@@ -24,6 +24,7 @@ except ImportError:  # pragma: no cover
     sys.exit(2)
 
 VALID_PATTERNS = {"morty", "spec-driven", "performance", "hybrid"}
+VALID_VERIFIER_SHAPES = {"gate", "ratchet"}
 SCHEMA_VERSION = 1  # highest loop-spec schema version this linter understands
 VALID_CHECKPOINT_MODES = {"before", "after"}
 
@@ -123,6 +124,15 @@ def lint_spec(spec: dict) -> list[str]:
                  "Every loop needs a limit that ends it even if the goal is never met.")
     if mi is not None and not mi_ok:
         f.append(f"stop.max_iterations: '{mi}' is not a positive integer.")
+
+    # Verifier shape — optional; must be a known archetype if given.
+    shape = v.get("shape")
+    if shape is not None:
+        if str(shape).strip().lower() not in VALID_VERIFIER_SHAPES:
+            f.append(f"verifier.shape: '{shape}' must be one of {sorted(VALID_VERIFIER_SHAPES)}.")
+        elif str(shape).strip().lower() == "ratchet" and not has_budget:
+            f.append("verifier.shape: ratchet has no finish gate — set stop.budget "
+                     "(a ratchet runs until budget, not until GREEN).")
 
     return f
 

@@ -23,6 +23,7 @@ state:
 # --- Atom 3: Verifier (EXTERNAL — not the maker's own opinion) ---------------
 verifier:
   kind: <test | build | lint | repro | benchmark | rubric | reviewer>
+  shape: <gate | ratchet>          # optional, default gate. ratchet = "no worse than baseline"; needs stop.budget + a sibling baseline + ratchet-advance.sh (see examples/ratchet-debt).
   command: "<exact shell command that exits 0 = GREEN, non-zero = RED>"
   # For a human/agent reviewer instead of a command:
   reviewer: "<name of the separate reviewer/agent — must differ from the maker>"

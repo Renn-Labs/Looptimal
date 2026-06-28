@@ -66,4 +66,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pip install pyyaml
-      - run: python3 scripts/loopprint-lint.py examples/ci-triage/loop-spec.yaml
+      - run: python3 scripts/loopprint-lint.py examples/*/loop-spec.yaml
