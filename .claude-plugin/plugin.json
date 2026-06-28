@@ -1,6 +1,6 @@
 {
   "name": "loopprint",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Interactive wizard that turns a vague goal into a runnable loop blueprint — durable state, an external verifier, stop conditions, and maker != checker. Decision gate, pattern library, and a generated, self-linted artifact package.",
   "author": {
     "name": "Erik Ford",
