@@ -29,6 +29,16 @@ GENERIC = {
     "banner": "",
 }
 
+# Agent provider CLIs the user might have. Probed via which; purely informational.
+PROVIDERS = [
+    ("claude", "claude"),
+    ("codex", "codex"),
+    ("grok", "grok"),
+    ("gemini", "gemini"),
+    ("aider", "aider"),
+    ("cursor-agent", "cursor-agent"),
+]
+
 # marker test -> ecosystem NAME only. Stable signals; NO binding values here.
 MARKERS = [
     ("oh-my-claudecode", lambda cwd: (cwd / ".omc").is_dir() or _on_path("omc")
@@ -90,6 +100,8 @@ def main(argv) -> int:
     if isinstance(d, dict):
         print(f"dispatch.maker: {d.get('maker', '')}")
         print(f"dispatch.checker: {d.get('checker', '')}")
+    available = [label for label, binary in PROVIDERS if shutil.which(binary) is not None]
+    print(f"provider.available: {', '.join(available) if available else 'none'}")
     return 0
 
 

@@ -90,3 +90,25 @@ def test_dual_registration_ok_when_folder_only(tmp_path, monkeypatch):
 def test_dual_registration_skips_when_neither(tmp_path, monkeypatch):
     f = _dual_registration_finding(_load_doctor(), monkeypatch, tmp_path, link=False, enabled=False)
     assert f["status"] == "SKIP"
+
+
+def test_check_available_providers_is_info_and_nonfailing():
+    doctor = _load_doctor()
+    r = doctor.Report(fix=False)
+    doctor.check_available_providers(r)
+    findings = [f for f in r.findings if f["check"] == "available_providers"]
+    assert len(findings) == 1, "expected exactly one available_providers finding"
+    assert findings[0]["status"] == "INFO"
+    assert r.counts()["FAIL"] == 0, "INFO finding must not increment FAIL count"
+
+
+def test_check_available_providers_zero_providers_ok(monkeypatch):
+    import shutil as _shutil
+    doctor = _load_doctor()
+    monkeypatch.setattr(doctor.shutil, "which", lambda _: None)
+    r = doctor.Report(fix=False)
+    doctor.check_available_providers(r)
+    f = next(f for f in r.findings if f["check"] == "available_providers")
+    assert f["status"] == "INFO"
+    assert "none detected" in f["detail"]
+    assert r.counts()["FAIL"] == 0

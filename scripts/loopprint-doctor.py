@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -467,11 +468,31 @@ def check_ecosystem_hint(r: Report) -> None:
         r.add("ecosystem", "INFO", f"detected: {', '.join(seen)}",
               "Harnesses that discover a skills dir (OpenClaw, Hermes, OpenCode) install like Claude — symlink "
               "the repo into that skills dir (OpenCode also auto-loads skills from ~/.claude/skills). For "
-              "harnesses that real-copy skills (Codex/OMX) or read an AGENTS.md catalog (Grok), re-run that "
+              "harnesses that real-copy skills (Codex/OMX) or read an AGENTS.md catalog, re-run that "
               "harness's sync after updates. These bridges are owned by your harness; see "
               "references/troubleshooting.md.")
     else:
         r.add("ecosystem", "INFO", "no known harness markers — generic install")
+
+
+PROVIDERS = [
+    ("claude", "claude"),
+    ("codex", "codex"),
+    ("grok", "grok"),
+    ("gemini", "gemini"),
+    ("aider", "aider"),
+    ("cursor-agent", "cursor-agent"),
+]
+
+
+def check_available_providers(r: Report) -> None:
+    available = [label for label, binary in PROVIDERS if shutil.which(binary) is not None]
+    if available:
+        detail = (f"{', '.join(available)} detected — wire a different one as the checker "
+                  "for cross-provider maker≠checker")
+    else:
+        detail = "none detected — loops run on deterministic gates or your single tool"
+    r.add("available_providers", "INFO", detail)
 
 
 def check_assets(r: Report) -> None:
@@ -508,6 +529,7 @@ CHECKS = [
     check_skill_links,
     check_dual_registration,
     check_ecosystem_hint,
+    check_available_providers,
     check_assets,
     check_invocation,
 ]
