@@ -396,6 +396,59 @@ def _safe_resolve(p: Path) -> str:
         return "unresolvable"
 
 
+def _enabled_loopprint_plugins(cfg_dir: Path) -> list[str]:
+    """Return enabled loopprint plugin keys (`name@owner`), merging settings.json with settings.local.json
+    (local wins, per Claude's precedence). ENABLED state — not mere install/cache presence — is what makes a
+    plugin load, so it's the only signal that creates a real double registration; a disabled-but-cached plugin
+    is dormant and must NOT trip the collision warning (else the dev fix below would keep warning forever)."""
+    merged: dict[str, bool] = {}
+    for fname in ("settings.json", "settings.local.json"):
+        p = cfg_dir / fname
+        if not p.is_file():
+            continue
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        ep = data.get("enabledPlugins") if isinstance(data, dict) else None  # non-dict root (null/list) -> skip
+        if isinstance(ep, dict):
+            for k, v in ep.items():
+                merged[k] = bool(v)
+    return [k for k, on in merged.items() if on and k.startswith("loopprint@")]
+
+
+def check_dual_registration(r: Report) -> None:
+    """Claude Code discovers a skill TWO ways: as a marketplace plugin (invoked `loopprint:loopprint`) and as a
+    folder skill under <config>/skills/ (invoked bare `loopprint`). When BOTH resolve, loopprint registers twice
+    and shows up under both names. Each path is individually 'healthy', so neither check_plugin_manifests nor
+    check_skill_links catches it — this one cross-references them. The trigger is the plugin being *enabled*
+    (what actually loads it), so disabling it clears the warning with no re-clone or file deletion."""
+    cfg = Path(os.environ.get("CLAUDE_CONFIG_DIR") or (Path.home() / ".claude"))
+    link = cfg / "skills" / "loopprint"
+    folder_live = link.exists()  # follows symlinks; a *dangling* link is False -> not a live registration
+    enabled = _enabled_loopprint_plugins(cfg)
+    if folder_live and enabled:
+        resolved = _safe_resolve(link)
+        where = "this repo" if resolved == str(ROOT) else resolved
+        names = ", ".join(f"'{k}'" for k in enabled)  # list every enabled loopprint plugin, not just the first
+        r.add("dual_registration", "WARN",
+              f"loopprint is registered TWICE on Claude Code — plugin {names} (enabled) AND the folder "
+              f"skill {link} -> {where}. It loads under both `loopprint:loopprint` (plugin) and `loopprint` "
+              "(folder skill) — that's the duplicate you see in the skill list.",
+              "Keep ONE mechanism. Dev machine (live edits to this clone): keep the symlink and disable the "
+              f'plugin — set enabledPlugins["{enabled[0]}"]: false in {cfg / "settings.json"} (or via /plugin). '
+              f"User machine: keep the plugin and remove the link — rm {link}.")
+    elif enabled:
+        r.add("dual_registration", "OK",
+              f"single Claude registration — plugin '{enabled[0]}' only (no folder-skill link)")
+    elif folder_live:
+        r.add("dual_registration", "OK",
+              f"single Claude registration — folder skill {link} (no loopprint plugin enabled)")
+    else:
+        r.add("dual_registration", "SKIP",
+              "no Claude registration here (neither an enabled loopprint plugin nor a folder-skill link)")
+
+
 def check_ecosystem_hint(r: Report) -> None:
     cwd = Path.cwd()
     home = Path.home()
@@ -453,6 +506,7 @@ CHECKS = [
     check_profile,
     check_plugin_manifests,
     check_skill_links,
+    check_dual_registration,
     check_ecosystem_hint,
     check_assets,
     check_invocation,
