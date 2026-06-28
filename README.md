@@ -89,6 +89,9 @@ Windows**, `ln -s` isn't available and symlinks need elevation — use one of:
 - **WSL** — clone and link inside the Linux filesystem; everything behaves like Linux.
 - **Junction (no admin)** — `mklink /J "%USERPROFILE%\.claude\skills\loopprint" "%USERPROFILE%\loopprint"` (cmd).
   A directory junction needs no Developer Mode or admin and still updates with a plain `git pull` of the clone.
+  From a native PowerShell session, the helper script does the same idempotently:
+  `powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\scripts\install-windows.ps1`
+  PowerShell 7 users can run the same command with `pwsh` instead of `powershell`.
 - **Symlink** — `mklink /D …` (cmd) or `New-Item -ItemType SymbolicLink …` (PowerShell); both need Developer Mode
   or an elevated shell.
 - **Copy** — `xcopy /E /I %USERPROFILE%\loopprint %USERPROFILE%\.claude\skills\loopprint`; works anywhere, but
