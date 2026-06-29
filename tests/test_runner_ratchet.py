@@ -4,12 +4,42 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 RUNNER = ROOT / "templates" / "run-this-loop.sh"
+
+
+def _bash_ok() -> bool:
+    """Return True only when a real POSIX bash is available.
+
+    The GitHub ``windows-latest`` runner ships ``bash.exe`` as the WSL launcher
+    stub with no distro installed, so shelling out to it exits non-zero. These
+    tests exec ``run-this-loop.sh`` via bash, so skip the whole module wherever
+    no working POSIX bash exists (Windows CI) rather than fail spuriously.
+    """
+    if sys.platform.startswith("win"):
+        return False
+    b = shutil.which("bash")
+    if not b:
+        return False
+    try:
+        out = subprocess.run(
+            [b, "-c", "echo ok"], capture_output=True, text=True, timeout=10
+        )
+        return out.stdout.strip() == "ok"
+    except Exception:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _bash_ok(), reason="runner tests need a POSIX bash (skipped on Windows CI)"
+)
 
 
 def _setup(tmp: Path) -> None:
