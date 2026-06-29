@@ -1,0 +1,8 @@
+TODO: extract magic numbers in billing/invoice.py into named constants
+TODO: remove dead branch in auth/session.py:check_expiry (always False since #412)
+TODO: replace bare except in data/loader.py with explicit exception types
+TODO: add docstring to utils/pagination.py:paginate() — public API, undocumented
+TODO: fix mutable default argument in config/settings.py:parse_flags (line 88)
+TODO: delete commented-out migration in db/migrations/0014_legacy.sql (stale since v0.9)
+TODO: resolve FIXME: divide-by-zero guard missing in reports/aggregate.py:compute_rate
+TODO: type-annotate return values in api/handlers.py — mypy strict mode blocked on this

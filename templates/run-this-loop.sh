@@ -32,6 +32,12 @@ METRICS_FILE="${METRICS_FILE:-metrics.jsonl}"  # append-only per-iteration metri
 METRICS_ADAPTER="${METRICS_ADAPTER:-}"         # optional cmd: prints "<tokens> <cost_usd>" for an iteration
                                                # (harness-specific). Core stays dep-free; tokens/cost are
                                                # INJECTED here, never parsed from the spec. Empty => null/null.
+VERIFIER_SHAPE="${VERIFIER_SHAPE:-gate}"       # gate | ratchet. ratchet = "no worse than baseline": GREEN != done,
+                                               # the loop stops only on budget / max-iters, advance tightens post-accept.
+RATCHET_ADVANCE="${RATCHET_ADVANCE:-}"         # ratchet only: sibling script that tightens the baseline after an
+                                               # accepted GREEN. Its own process; the runner never writes the baseline.
+BUDGET_MIN="${BUDGET_MIN:-}"                   # wall-clock cap in minutes (hard stop, exit 6). Any shape; mainly for
+                                               # ratchet/persistent loops that don't stop on GREEN. Empty => no cap.
 
 log() { printf '%s  %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATE_FILE" >&2; }
 run_verifier() { bash "$VERIFIER"; }           # the ONLY thing that can declare success
@@ -42,6 +48,19 @@ now_ms() {                                     # epoch milliseconds, portably
     ''|*[!0-9]*) echo $(( $(date +%s) * 1000 ));;  # BSD/macOS date has no %N -> non-numeric; use seconds
     *) echo "$ms";;
   esac
+}
+iso_to_epoch() {                               # ISO-8601 UTC ("...Z") -> epoch seconds; "" if unparseable. Portable.
+  local ts=$1 e
+  if e=$(date -u -d "$ts" +%s 2>/dev/null); then printf '%s' "$e"; return 0; fi               # GNU date
+  if e=$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$ts" +%s 2>/dev/null); then printf '%s' "$e"; return 0; fi  # BSD/macOS
+  printf ''                                                                                    # neither parsed it
+}
+budget_exceeded() {                            # 0 (true) only when a wall-clock cap is set AND reached. Empty => never.
+  [ -n "$BUDGET_MIN" ] || return 1
+  local now elapsed_min
+  now=$(date +%s)
+  elapsed_min=$(( (now - BUDGET_START_EPOCH) / 60 ))
+  [ "$elapsed_min" -ge "$BUDGET_MIN" ]         # BUDGET_MIN=0 => exceeded immediately
 }
 json_escape() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
 
@@ -64,7 +83,14 @@ emit_checkpoint() { # iter verifier_result note
 # ---- --check preflight (m5): confirm both gates are runnable; make NO changes -
 if [ "${1:-}" = "--check" ] || [ "${1:-}" = "--check-verifier" ]; then
   rc=0
-  for s in "$VERIFIER" "$MAKER"; do
+  checks=("$VERIFIER" "$MAKER")
+  # Under ratchet, the advance script is a load-bearing 3rd role — preflight it too (BUG-G).
+  # If the shape is ratchet but no advance is wired, the baseline can never tighten — warn rather than pass silently.
+  if [ "$VERIFIER_SHAPE" = ratchet ]; then
+    if [ -n "$RATCHET_ADVANCE" ]; then checks+=("$RATCHET_ADVANCE")
+    else echo "WARNING: VERIFIER_SHAPE=ratchet but RATCHET_ADVANCE is unset — the baseline will never tighten." >&2; fi
+  fi
+  for s in "${checks[@]}"; do
     if [ ! -f "$s" ]; then echo "MISSING: $s" >&2; rc=1; continue; fi
     if ! bash -n "$s" 2>/dev/null; then echo "NOT RUNNABLE: $s (syntax error)" >&2; rc=1; continue; fi
     echo "ok: $s present and parses" >&2
@@ -86,7 +112,26 @@ if [ "${1:-}" = "--resume" ] && [ -f "$METRICS_FILE" ]; then
   log "RESUME from iter $iter (per $METRICS_FILE)"
 fi
 
+# Wall-clock budget anchor — computed ONCE, resume-safe (BUG-C). If metrics already exist, measure elapsed from
+# the FIRST recorded ts so --resume enforces a CUMULATIVE cap (not a fresh window per process); else from now.
+# Always assigned (defaults to now) so `set -u` never trips even when the ts is missing/unparseable.
+BUDGET_START_EPOCH=$(date +%s)
+if [ -s "$METRICS_FILE" ]; then
+  _first_ts=$(sed -n '1p' "$METRICS_FILE" 2>/dev/null | sed -n 's/.*"ts":[[:space:]]*"\([^"]*\)".*/\1/p')
+  if [ -n "$_first_ts" ]; then
+    _ep=$(iso_to_epoch "$_first_ts")
+    [ -n "$_ep" ] && BUDGET_START_EPOCH=$_ep
+  fi
+fi
+
 log "START goal=\"$GOAL\" max_iters=$MAX_ITERS autonomy=$AUTONOMY checkpoint_mode=$CHECKPOINT_MODE"
+
+# A ratchet with no advance step never tightens the baseline — it just burns budget (a no-op loop). That silent
+# no-op is exactly the failure LoopPrint exists to prevent, so surface it loudly at the start (don't fail: an
+# unwired ratchet can be intentional mid-setup).
+if [ "$VERIFIER_SHAPE" = ratchet ] && [ -z "$RATCHET_ADVANCE" ]; then
+  log "WARNING: VERIFIER_SHAPE=ratchet but RATCHET_ADVANCE is unset — the baseline will never tighten (no-op ratchet)."
+fi
 
 # checkpoint autonomy needs an interactive terminal; refuse rather than hang/exit silently in CI.
 if [ "$AUTONOMY" = "checkpoint" ] && [ ! -t 0 ]; then
@@ -99,8 +144,13 @@ fi
 : > "$RUN_LOCK"
 trap 'rm -f "$RUN_LOCK"' EXIT INT TERM
 
-# Verify-first: if the goal is already met, do nothing.
-if run_verifier; then
+# Wall-clock budget is a HARD cap — check before any work so BUDGET_MIN=0 or a resumed over-budget run
+# stops cleanly (exit 6) without burning an iteration. No-op for gate / unset budget.
+if budget_exceeded; then log "STOP: wall-clock budget ${BUDGET_MIN}m reached."; exit 6; fi
+
+# Verify-first (gate only): if the goal is already met, do nothing. A ratchet never early-exits on GREEN
+# (GREEN means "no worse than baseline", not "done") — it skips this and falls into the loop.
+if [ "$VERIFIER_SHAPE" != ratchet ] && run_verifier; then
   log "GREEN at iter $iter — nothing to do."
   emit_metrics "$iter" 0 GREEN true; emit_checkpoint "$iter" GREEN "already green at start"
   exit 0
@@ -108,8 +158,13 @@ fi
 
 while :; do
   [ -f "$HALT_FILE" ] && { log "HALT file present — stopping."; exit 3; }
+  if budget_exceeded; then log "STOP: wall-clock budget ${BUDGET_MIN}m reached."; exit 6; fi
   iter=$((iter + 1))
-  if [ "$iter" -gt "$MAX_ITERS" ]; then log "STOP: hit max_iterations ($MAX_ITERS) without GREEN."; exit 2; fi
+  if [ "$iter" -gt "$MAX_ITERS" ]; then
+    if [ "$VERIFIER_SHAPE" = ratchet ]; then log "STOP: hit max_iterations ($MAX_ITERS) — ratchet stop reached."
+    else log "STOP: hit max_iterations ($MAX_ITERS) without GREEN."; fi
+    exit 2
+  fi
   log "--- iteration $iter ---"
 
   # checkpoint BEFORE = authorize the iteration up front.
@@ -138,10 +193,27 @@ while :; do
     fi
   fi
 
+  # Ratchet advance (3rd role) — ONE place, post-accept, BEFORE emit_metrics so a failed advance demotes
+  # 'accepted' in the recorded row (honest audit, BUG-A/F). Separate process; the runner never writes baseline.
+  if [ "$VERIFIER_SHAPE" = ratchet ] && [ "$res" = GREEN ] && [ "$accepted" = true ] && [ -n "$RATCHET_ADVANCE" ]; then
+    if ! bash "$RATCHET_ADVANCE"; then
+      accepted=false
+      log "ratchet-advance failed at iter $iter — marking not-accepted."
+    fi
+  fi
+
   emit_metrics "$iter" "$wall" "$res" "$accepted"
   emit_checkpoint "$iter" "$res" "iteration $iter -> $res (accepted=$accepted)"
 
-  if [ "$res" = GREEN ] && [ "$accepted" = true ]; then
+  if [ "$VERIFIER_SHAPE" = ratchet ]; then
+    # Ratchet: GREEN means "no worse than baseline", NOT "done" — never exit 0 here. A ratchet stops only on
+    # budget or max-iters; the committed baseline (tightened post-accept) is the durable progress record.
+    if [ "$res" = GREEN ]; then
+      log "GREEN at iter $iter — not worse than baseline; continuing."
+    else
+      log "RED at iter $iter — verifier rejected; iterating."
+    fi
+  elif [ "$res" = GREEN ] && [ "$accepted" = true ]; then
     log "GREEN at iter $iter — goal met and change accepted. DONE."
     exit 0
   elif [ "$res" = GREEN ]; then

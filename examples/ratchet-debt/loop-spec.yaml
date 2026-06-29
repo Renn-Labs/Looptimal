@@ -1,0 +1,35 @@
+slug: ratchet-debt
+created: 2026-06-28
+pattern: performance
+
+goal: >
+  Reduce the committed technical-debt findings count in findings.txt to zero,
+  verified by a monotonically decreasing line count against a committed baseline.
+
+state:
+  path: examples/ratchet-debt/state.md
+  records:
+    - current findings count and delta from baseline
+    - finding resolved this iteration
+    - verifier result (GREEN / RED)
+    - next finding to address
+
+verifier:
+  shape: ratchet
+  kind: benchmark
+  command: "bash verify.sh"
+  green_means: >
+    findings count is no greater than the committed baseline — debt has not
+    grown since the last accepted iteration
+
+stop:
+  max_iterations: 50
+  budget:
+    wall_clock_minutes: 30
+    tokens: null
+  halt_file: examples/ratchet-debt/HALT
+
+autonomy: full
+
+human_checkpoints:
+  - "review the git diff of baseline before merging — the diff IS the durable progress record"

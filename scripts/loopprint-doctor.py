@@ -495,6 +495,65 @@ def check_available_providers(r: Report) -> None:
     r.add("available_providers", "INFO", detail)
 
 
+def check_ratchet_wiring(r: Report) -> None:
+    """For each examples/*/loop-spec.yaml with verifier.shape == ratchet, verify that a
+    sibling run_demo.sh exists and contains VERIFIER_SHAPE=ratchet — catching silent gate-drift
+    where the spec declares ratchet but the demo runner is not wired to use the ratchet shape."""
+    try:
+        import yaml
+    except ImportError:
+        r.add("ratchet_wiring", "SKIP", "PyYAML not installed — cannot read loop specs")
+        return
+
+    examples_dir = ROOT / "examples"
+    if not examples_dir.is_dir():
+        r.add("ratchet_wiring", "SKIP", "examples/ directory not found")
+        return
+
+    checked = 0
+    warnings: list[str] = []
+    for spec_path in sorted(examples_dir.glob("*/loop-spec.yaml")):
+        try:
+            spec = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(spec, dict):
+            continue
+        v = spec.get("verifier")
+        if not isinstance(v, dict):
+            v = {}
+        shape = str(v.get("shape", "")).strip().lower()
+        if shape != "ratchet":
+            continue
+        checked += 1
+        slug = spec.get("slug", spec_path.parent.name)
+        demo = spec_path.parent / "run_demo.sh"
+        if not demo.is_file():
+            warnings.append(f"{slug}: run_demo.sh missing")
+            continue
+        try:
+            content = demo.read_text(encoding="utf-8")
+        except OSError:
+            warnings.append(f"{slug}: run_demo.sh unreadable")
+            continue
+        if "VERIFIER_SHAPE=ratchet" not in content:
+            warnings.append(
+                f"{slug}: run_demo.sh does not export VERIFIER_SHAPE=ratchet "
+                "(spec says ratchet but the runner is not wired for it)"
+            )
+
+    if not checked:
+        r.add("ratchet_wiring", "SKIP", "no ratchet loop-spec.yaml found in examples/")
+        return
+    if warnings:
+        r.add("ratchet_wiring", "WARN",
+              "; ".join(warnings),
+              "Add VERIFIER_SHAPE=ratchet to run_demo.sh so the runner uses the ratchet shape.")
+    else:
+        r.add("ratchet_wiring", "OK",
+              f"all {checked} ratchet loop(s) have run_demo.sh wired with VERIFIER_SHAPE=ratchet")
+
+
 def check_assets(r: Report) -> None:
     if (ROOT / "assets" / "logo.txt").is_file():
         r.add("assets", "OK", "banner art present")
@@ -530,6 +589,7 @@ CHECKS = [
     check_dual_registration,
     check_ecosystem_hint,
     check_available_providers,
+    check_ratchet_wiring,
     check_assets,
     check_invocation,
 ]
