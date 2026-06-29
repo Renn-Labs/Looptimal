@@ -14,6 +14,8 @@ Exit code:
 Requires PyYAML (`pip install pyyaml`).
 """
 from __future__ import annotations
+import hashlib
+import os
 import sys
 import re
 
@@ -146,6 +148,137 @@ def lint_spec(spec: dict) -> list[str]:
     return f
 
 
+_EXEC_MAKER_RE = re.compile(
+    r"(bash\s+maker\.sh|exec\s+\S*maker\.sh|source\s+maker\.sh|\.\s+maker\.sh)"
+)
+_PROV_RE = re.compile(r"PROVIDER\s*=\s*['\"]?(\w+)['\"]?")
+_AGENT_RE = re.compile(r"\b(claude|codex|grok|gemini|aider|cursor-agent)\b")
+
+
+def _sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _provider_tokens(path: str) -> set:
+    try:
+        txt = open(path).read()
+    except OSError:
+        return set()
+    toks = {m.group(1).lower() for m in _PROV_RE.finditer(txt)}
+    toks |= {m.group(1).lower() for m in _AGENT_RE.finditer(txt)}
+    return toks
+
+
+def lint_critic_panel_dir(spec_path: str, spec: dict) -> tuple:
+    """Check filesystem judge≠maker integrity for critic-panel specs.
+
+    Returns (blocking, advisory) — both empty if verifier.kind != 'critic-panel'.
+    blocking entries are added to findings (RED); advisory are printed as '   ~ <msg>'
+    without affecting exit code.
+    """
+    v = _as_dict(spec.get("verifier"))
+    if v.get("kind") != "critic-panel":
+        return [], []
+
+    panel = _as_dict(v.get("panel"))
+    n = panel.get("n")
+    n_ok = isinstance(n, int) and not isinstance(n, bool) and n > 0
+
+    blocking: list = []
+    advisory: list = []
+
+    d = os.path.dirname(os.path.abspath(spec_path))
+
+    # Discover critic scripts (sorted, basenames only).
+    try:
+        critic_names = sorted(
+            f for f in os.listdir(d) if re.match(r"critic-.*\.sh$", f)
+        )
+    except OSError:
+        critic_names = []
+
+    # BLOCKING: fewer than panel.n critics present (skip if n invalid — S2 already flags it).
+    if n_ok and len(critic_names) < n:
+        blocking.append(
+            f"critic-panel: found {len(critic_names)} critic-*.sh but panel.n={n} "
+            f"— need {n} distinct critic scripts."
+        )
+
+    maker_path = os.path.join(d, "maker.sh")
+    maker_exists = os.path.isfile(maker_path)
+    maker_realpath = os.path.realpath(maker_path) if maker_exists else None
+    try:
+        maker_sha = _sha256(maker_path) if maker_exists else None
+    except OSError:
+        maker_sha = None
+    maker_providers = _provider_tokens(maker_path) if maker_exists else set()
+
+    seen_shas: dict = {}  # sha -> first critic basename (identical-critics check)
+
+    for name in critic_names:
+        path = os.path.join(d, name)
+        is_maker_violation = False
+
+        # Compute sha once per critic.
+        try:
+            sha = _sha256(path)
+        except OSError:
+            sha = None
+
+        if maker_exists:
+            # BLOCKING: realpath == maker.sh (symlink alias).
+            if os.path.realpath(path) == maker_realpath:
+                blocking.append(
+                    f"{name} is/runs maker.sh — maker cannot be its own checker."
+                )
+                is_maker_violation = True
+            # BLOCKING: content sha == maker.sh.
+            elif sha and sha == maker_sha:
+                blocking.append(
+                    f"{name} is/runs maker.sh — maker cannot be its own checker."
+                )
+                is_maker_violation = True
+            else:
+                # BLOCKING: script calls/execs/sources maker.sh.
+                try:
+                    content = open(path).read()
+                except OSError:
+                    content = ""
+                if _EXEC_MAKER_RE.search(content):
+                    blocking.append(
+                        f"{name} is/runs maker.sh — maker cannot be its own checker."
+                    )
+                    is_maker_violation = True
+
+        # BLOCKING: two critics identical (only for non-maker-violation critics).
+        if not is_maker_violation and sha:
+            if sha in seen_shas:
+                blocking.append(
+                    f"{seen_shas[sha]} and {name} are identical "
+                    f"— critics must be independent."
+                )
+            else:
+                seen_shas[sha] = name
+
+        # ADVISORY: critic shares provider with maker (skip if already a maker violation).
+        if not is_maker_violation and maker_exists and maker_providers:
+            cp = _provider_tokens(path)
+            common = cp & maker_providers
+            if common:
+                prov_str = ", ".join(sorted(common))
+                advisory.append(
+                    f"{name} uses the same provider as maker.sh "
+                    f"({prov_str} — single-provider panel — weaker independence; "
+                    f"point a critic at a different provider via dispatch.checker if available)."
+                )
+
+    return blocking, advisory
+
+
 def main(argv: list[str]) -> int:
     paths = argv[1:]
     if not paths:
@@ -174,6 +307,9 @@ def main(argv: list[str]) -> int:
                                        "Each loop needs its own slug (and its own directory)."]
             else:
                 slugs[slug] = p
+        # Judge≠maker filesystem integrity (critic-panel only; advisory is non-failing).
+        blocking, advisory = lint_critic_panel_dir(p, spec)
+        findings.extend(blocking)
         if findings:
             bad += 1
             print(f"RED  {p}:")
@@ -181,6 +317,8 @@ def main(argv: list[str]) -> int:
                 print(f"   - {x}")
         else:
             print(f"GREEN {p}: four atoms present, verifier is external, safety limit set.")
+        for adv in advisory:
+            print(f"   ~ {adv}")
     return 1 if bad else 0
 
 
