@@ -22,11 +22,17 @@ state:
 
 # --- Atom 3: Verifier (EXTERNAL — not the maker's own opinion) ---------------
 verifier:
-  kind: <test | build | lint | repro | benchmark | rubric | reviewer>
+  kind: <test | build | lint | repro | benchmark | rubric | reviewer | critic-panel>
   command: "<exact shell command that exits 0 = GREEN, non-zero = RED>"
   # For a human/agent reviewer instead of a command:
   reviewer: "<name of the separate reviewer/agent — must differ from the maker>"
   green_means: "<what a pass actually proves>"
+  # For kind: critic-panel — N independent judge scripts, k-of-N quorum (panel: block is
+  # optional for other kinds; meaningful only when kind: critic-panel).
+  panel:
+    n: <int>            # number of critic scripts (critic-1.sh … critic-N.sh)
+    quorum_k: <int>     # passes required to succeed (must be <= n)
+    threshold: <int>    # score threshold 0–100 per critic (e.g. 80)
 
 # --- Atom 4: Stop conditions (success AND a safety limit; first to hit wins) -
 stop:

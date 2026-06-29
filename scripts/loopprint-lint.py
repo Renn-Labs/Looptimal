@@ -110,6 +110,25 @@ def lint_spec(spec: dict) -> list[str]:
             f.append(f"{label}: looks like self-grading ('{val[:50]}'). "
                      "The maker cannot be the checker — point this at an external gate.")
 
+    # critic-panel quorum config validation (only when kind == "critic-panel").
+    if v.get("kind") == "critic-panel":
+        panel = _as_dict(v.get("panel"))
+        n = panel.get("n")
+        qk = panel.get("quorum_k")
+        thr = panel.get("threshold")
+        n_ok = isinstance(n, int) and not isinstance(n, bool) and n > 0
+        if not n_ok:
+            f.append("verifier.panel.n: must be a positive integer (required for kind: critic-panel).")
+        else:
+            qk_ok = isinstance(qk, int) and not isinstance(qk, bool) and qk > 0
+            if not qk_ok:
+                f.append("verifier.panel.quorum_k: must be a positive integer (required for kind: critic-panel).")
+            elif qk > n:
+                f.append(f"verifier.panel.quorum_k: {qk} > panel.n ({n}) — quorum cannot exceed the number of critics.")
+        if thr is not None:
+            if not (isinstance(thr, int) and not isinstance(thr, bool) and 0 <= thr <= 100):
+                f.append(f"verifier.panel.threshold: '{thr}' must be an integer 0–100.")
+
     # Stop — must have a safety limit (max_iterations or a budget), not just a success condition.
     stop = _as_dict(spec.get("stop"))
     mi = stop.get("max_iterations")

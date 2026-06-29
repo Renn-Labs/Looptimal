@@ -103,3 +103,27 @@ recipes:
       echo "verify: human-vote GREEN"
     green_means: A human reviewer explicitly recorded APPROVED in the vote file.
     caveats: This makes the loop a checkpointed workflow, not a fully autonomous loop — the runner blocks until a human acts. The human is external by definition (maker ≠ checker), but throughput depends on human availability.
+
+  - id: critic-panel
+    kind: rubric
+    use_when: Output quality must be scored by N independent judge scripts with a k-of-N quorum. Strongest for eval, orchestration, or subjective quality goals where a single judge is insufficient. Generalizes llm-rubric-judge (n=1, quorum_k=1 == single-judge case).
+    snippet: |
+      set -euo pipefail
+      # Copy into loops/<slug>/verify.sh — NEVER eval a command string from loop-spec.yaml.
+      # Adapt N, QUORUM_K, THRESHOLD, RUBRIC, ARTIFACT to your loop.
+      RUBRIC="rubric.md"; ARTIFACT="artifact.md"
+      N=3; QUORUM_K=2; THRESHOLD=80
+      sha() { (sha256sum "$1" 2>/dev/null || shasum -a 256 "$1") | awk '{print $1}'; }
+      rsha=$(sha "$RUBRIC"); asha=$(sha "$ARTIFACT"); pass=0
+      while IFS= read -r i; do
+        score=$(bash "./critic-$i.sh" --rubric "$RUBRIC" --artifact "$ARTIFACT")
+        ok=false; [ "${score:-0}" -ge "$THRESHOLD" ] && { ok=true; pass=$((pass+1)); }
+        provider=$(grep -m1 -oE 'PROVIDER=[A-Za-z0-9_-]+' "./critic-$i.sh" | cut -d= -f2 || true)
+        printf '{"ts":"%s","critic":"critic-%s","provider":"%s","score":%s,"threshold":%s,"pass":%s,"rubric_sha":"%s","artifact_sha":"%s","n":%s,"quorum_k":%s}\n' \
+          "$(date -u +%FT%TZ)" "$i" "${provider:-unknown}" "${score:-0}" \
+          "$THRESHOLD" "$ok" "$rsha" "$asha" "$N" "$QUORUM_K" >> critics.jsonl
+      done < <(seq 1 "$N")
+      [ "$pass" -ge "$QUORUM_K" ] || { echo "critic-panel: quorum FAIL ($pass/$N >= $QUORUM_K needed)" >&2; exit 1; }
+      echo "critic-panel: quorum PASS ($pass/$N)"; exit 0
+    green_means: At least quorum_k of N independent critics scored the artifact at or above threshold. Each critic's verdict is logged to critics.jsonl with rubric_sha, artifact_sha, provider, and score — inspectable after the fact.
+    caveats: Judge ≠ maker — each critic-N.sh MUST be a separate script with distinct provider dispatch; it may not exec or source maker.sh. Strongest when critics target cross-provider judges (see provider.available / dispatch.checker from the dispatch layer); a single-provider panel is weaker but valid when consciously acknowledged. This GENERALIZES llm-rubric-judge — n=1, quorum_k=1 is the single-judge case; prefer llm-rubric-judge when one judge suffices.
