@@ -1,6 +1,6 @@
-# Troubleshooting — heal a broken LoopPrint install
+# Troubleshooting — heal a broken Looptimal install
 
-LoopPrint can be installed four ways (Claude Code plugin, Claude folder skill, a Codex/OMX real-copy
+Looptimal can be installed four ways (Claude Code plugin, Claude folder skill, a Codex/OMX real-copy
 bridge, a Grok/AGENTS.md pointer), and a broken install usually fails *quietly* — the wizard just
 "isn't there", or a script won't run. This page is the repair map.
 
@@ -74,17 +74,17 @@ This is a **discovery or activation** problem (layer 2–3). By install type:
 **Codex / OMX (or any harness that *real-copies* skills)**
 | Cause | Fix |
 |-|-|
-| The copy is stale after a repo update | re-run **your harness's** skill-sync step (the bridge owns this — LoopPrint doesn't ship it) |
+| The copy is stale after a repo update | re-run **your harness's** skill-sync step (the bridge owns this — Looptimal doesn't ship it) |
 | The skill catalog entry is missing | re-run the sync so the harness re-registers it; confirm it appears in that harness's skill/agent index |
 
-> LoopPrint deliberately doesn't bundle a sync command for these — the copy-and-register step belongs to
-> your harness (the same decoupling rule as profiles: LoopPrint ships the skill, your harness owns how it's
+> Looptimal deliberately doesn't bundle a sync command for these — the copy-and-register step belongs to
+> your harness (the same decoupling rule as profiles: Looptimal ships the skill, your harness owns how it's
 > wired in). The doctor will *detect* the ecosystem and remind you, but the re-sync is yours to run.
 
 **Grok / any AGENTS.md-pointer harness**
 | Cause | Fix |
 |-|-|
-| The pointer section was edited away | re-add a short "LoopPrint" pointer to that harness's `AGENTS.md` describing when to use it and where the folder lives |
+| The pointer section was edited away | re-add a short "Looptimal" pointer to that harness's `AGENTS.md` describing when to use it and where the folder lives |
 
 **OpenCode / OpenClaw / Hermes (and any `~/.<harness>/skills/` agent)**
 | Cause | Fix |

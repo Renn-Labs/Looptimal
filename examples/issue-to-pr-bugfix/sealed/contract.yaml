@@ -1,0 +1,25 @@
+schema_version: 1
+objective: "Fix issue 123 - a cache miss for a missing project returns HTTP 500 instead of 404."
+world_class_definition: "The missing-project path returns a 404 with a structured error, proven by a sealed reproduction, with no baseline test removed to get there."
+sensitivity: low
+autonomy: checkpoint
+acceptance_suite:
+  provenance: framer
+  sealed_path: "sealed/"
+  criteria:
+    - id: C1
+      asserts: outcome
+      oracle: pre-fix-repro-artifact
+      external_check:
+        - python3
+        - sealed/check_repro.py
+      green_means: "The sealed reproduction no longer triggers the 500; a cache miss for a missing project yields a 404 with a structured error body."
+    - id: C2
+      asserts: outcome
+      oracle: no-regression-vs-sealed-baseline
+      external_check:
+        - python3
+        - sealed/check_no_regression.py
+      green_means: "Every check in the sealed baseline inventory still holds; no baseline test was deleted, skipped, or xfailed (inventory intact)."
+irreversibles: []
+contract_hash: "sha256:1817bdad35db97ddd478e7c0a48971d5151e81ff8e091ab303aa7f665ca79631"

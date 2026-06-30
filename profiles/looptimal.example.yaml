@@ -1,0 +1,105 @@
+# Looptimal illustrative profile binding.
+# This is a non-maintained example. Copy it into your project and edit it for
+# your harness, state layout, agent catalog, verifier, and dispatch surfaces.
+#
+# Profile contract:
+# - harness: names the runtime harness this profile targets.
+# - state_dir: durable local state root for loop attempts, outcomes, and verifier evidence.
+# - marker_path: file used by the harness to discover/anchor loop state.
+# - verifier.default: default hard oracle command or named verifier.
+# - dispatch.maker/checker: agent dispatch bindings; maker and checker must remain distinct.
+# - runner: command surface used to run generated scripts or loop stages.
+# - banner: concise loop-status banner template.
+# - registry: capability-to-agent binding map.
+# - roles: role-to-agent/model binding map.
+# - lanes: archetype bindings for outcome lanes.
+
+harness: codex
+state_dir: .omx/state/looptimal
+marker_path: .omx/state/looptimal/LOOPTIMAL.md
+
+verifier:
+  default: scripts/verify-outcome.sh
+
+dispatch:
+  maker:
+    agent: executor
+    model_tier: standard
+  checker:
+    agent: verifier
+    model_tier: frontier
+
+runner:
+  shell: bash
+  timeout_seconds: 1200
+  env:
+    LOOPTIMAL_PROFILE: profiles/looptimal.example.yaml
+
+banner:
+  template: "LOOPTIMAL · {stage} · iter {iteration}/{max_iterations} · outcome: {outcome} · verifier: {verifier_status}"
+  max_iterations: 5
+
+registry:
+  frame:
+    agent: planner
+    model_tier: frontier
+  diagnose:
+    agent: debugger
+    model_tier: frontier
+  oracle-design:
+    agent: test-engineer
+    model_tier: frontier
+  simulation:
+    agent: critic
+    model_tier: frontier
+  implementation:
+    agent: executor
+    model_tier: standard
+  verification:
+    agent: verifier
+    model_tier: frontier
+  documentation:
+    agent: writer
+    model_tier: standard
+
+roles:
+  outcome_planner:
+    agent: planner
+    model: gpt-5.4-mini
+  maker:
+    agent: executor
+    model: gpt-5.5
+  checker:
+    agent: verifier
+    model: gpt-5.5
+  adversary:
+    agent: critic
+    model: gpt-5.5
+  oracle_builder:
+    agent: test-engineer
+    model: gpt-5.5
+  persistence_writer:
+    agent: writer
+    model: gpt-5.5
+
+lanes:
+  task:
+    executor_role: maker
+    checker_role: checker
+    model_tier: standard
+  recurring:
+    executor_role: maker
+    checker_role: checker
+    model_tier: standard
+  supervised:
+    executor_role: maker
+    checker_role: checker
+    model_tier: frontier
+  persistent-ratchet:
+    executor_role: maker
+    checker_role: checker
+    model_tier: standard
+  orchestration:
+    executor_role: maker
+    checker_role: checker
+    model_tier: frontier

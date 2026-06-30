@@ -1,10 +1,10 @@
 # campaign-staged-remediation
 
-A worked example of a **LoopPrint campaign**: two independent gate loops composed by a
+A worked example of a **Looptimal campaign**: two independent gate loops composed by a
 `campaign-spec.yaml` manifest, with a mandatory human checkpoint between stages.
 
 This example is a **composition**, not a new loop type. Each stage (`stage-1/`, `stage-2/`)
-is a normal LoopPrint loop with its own `loop-spec.yaml`, `verify.sh`, `maker.sh`, and
+is a normal Looptimal loop with its own `loop-spec.yaml`, `verify.sh`, `maker.sh`, and
 `run-this-loop.sh`. The campaign manifest records the order and success criteria; it does not
 replace or extend the runner.
 

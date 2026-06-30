@@ -1,8 +1,41 @@
 # Changelog
 
-All notable changes to LoopPrint are documented here. The format is based on
+All notable changes to Looptimal are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+> **Note:** versions 1.x were released under the name **LoopPrint**. As of 2.0.0 the
+> project is **Looptimal** — the loop-design wizard is now one mode inside a larger
+> objective→outcome orchestrator. The repository was renamed `Renn-Labs/LoopPrint` →
+> `Renn-Labs/Looptimal` (old links redirect).
+
+## [2.0.0] — 2026-06-30
+
+### Changed
+- **Rebranded LoopPrint → Looptimal** and absorbed the previously-private orchestrator
+  ("LoopOptimal") into this repository as a single product. The loop-design wizard is
+  preserved unchanged and is now Looptimal's **Stage-2 "Design-loop"** mode (also a direct
+  `design` / blueprint fast-path). Install slug `loopprint@renn-labs` → `looptimal@renn-labs`.
+  Tagline evolved to *"from objective to verified outcome."*
+
+### Added
+- **Outcome orchestration pipeline** (`SKILL.md`, `references/pipeline.md`): 0 Frame (hash-pinned
+  **sealed** acceptance suite) → 1 Analyze (Capability Manifest) → 2 Design-loop → 3 Plan →
+  4 **Simulate** (roll the plan forward N steps + pre-mortem + harden) → [human GO] → 5 Execute
+  (dynamic domain-expert sub-agents, maker ≠ checker) → 6 **Verify-outcome** (a *separate* checker
+  re-runs the sealed suite against live state, ignoring self-reported GREEN) → 7 Persist.
+- **`looptimal-lint.py`** — plan-time gate for the outcome contract (sealed inputs, outcome-not-symptom
+  criteria, maker ≠ checker at the outcome altitude), distinct from the loop-spec gate `loopprint-lint.py`.
+- **`verify-outcome.py`** — Stage-6 sealed-suite re-runner with tamper→RED selftests, oracle-integrity
+  checks, and interpreter env-injection stripping.
+- **Agent Foundry** (`references/agent-foundry.md`, `personas/`): two-tier dynamic domain-expert
+  resolution (native agent if a profile advertises one; otherwise a synthesized persona).
+- **Worked example** (`examples/issue-to-pr-bugfix/`) that round-trips Frame → … → Verify-outcome.
+
+### Security
+- Documented an honest, disclosed residual in the sealing model (see `SECURITY.md`): anti-gaming
+  rests on the checker controlling `--workdir` and the framer owning `sealed/` via OS permissions;
+  a cryptographic framer hash-pin is planned for a later release. Not marketed as fully tamper-proof.
 
 ## [1.1.0] — 2026-06-27
 
@@ -40,5 +73,6 @@ package. Maker ≠ checker throughout, including on LoopPrint's own output.
 - **Distribution**: ships as a Claude Code plugin (`.claude-plugin/plugin.json` + `marketplace.json`),
   installable via `/plugin marketplace add Renn-Labs/LoopPrint`.
 
-[1.1.0]: https://github.com/Renn-Labs/LoopPrint/releases/tag/v1.1.0
-[1.0.0]: https://github.com/Renn-Labs/LoopPrint/releases/tag/v1.0.0
+[2.0.0]: https://github.com/Renn-Labs/Looptimal/releases/tag/v2.0.0
+[1.1.0]: https://github.com/Renn-Labs/Looptimal/releases/tag/v1.1.0
+[1.0.0]: https://github.com/Renn-Labs/Looptimal/releases/tag/v1.0.0

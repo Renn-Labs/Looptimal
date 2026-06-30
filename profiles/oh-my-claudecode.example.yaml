@@ -1,7 +1,7 @@
 # ILLUSTRATIVE example profile for oh-my-claudecode (OMC).
 #
 # NOT maintained against OMC releases. Copy this to ~/.loopprint/profile.yaml (or your project's
-# .loopprint/profile.yaml) and adjust the values to YOUR installed version. LoopPrint does not track OMC's
+# .loopprint/profile.yaml) and adjust the values to YOUR installed version. Looptimal does not track OMC's
 # conventions — you (or your OMC setup) own this binding. See ../references/profiles.md.
 
 harness: oh-my-claudecode

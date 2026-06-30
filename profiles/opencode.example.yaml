@@ -3,7 +3,7 @@
 # NOT maintained against OpenCode releases. Copy this to ~/.loopprint/profile.yaml (or a project's
 # .loopprint/profile.yaml) and adjust the values to YOUR install. OpenCode natively discovers Agent
 # Skills (SKILL.md) — from .opencode/skills/, ~/.config/opencode/skills/, and ~/.claude/skills/ — so
-# LoopPrint drops in unchanged; this profile only tunes how generated loops are wired. See
+# Looptimal drops in unchanged; this profile only tunes how generated loops are wired. See
 # ../references/profiles.md.
 
 harness: opencode

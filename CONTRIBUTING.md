@@ -1,6 +1,6 @@
-# Contributing to LoopPrint
+# Contributing to Looptimal
 
-Thanks for your interest. LoopPrint is a small, focused skill — contributions that keep it
+Thanks for your interest. Looptimal is a small, focused skill — contributions that keep it
 **generic, dependency-light, and honest about its gates** are very welcome.
 
 ## Ground rules

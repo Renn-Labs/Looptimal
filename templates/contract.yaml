@@ -1,0 +1,77 @@
+# Looptimal Frame Contract — hash-pinned acceptance suite (MIT, Renn Labs)
+# Seal this file (or a derived copy) before Plan/Execute; contract_hash must match sealed bytes.
+schema_version: "1.0"
+
+objective: >
+  Restore main-branch CI to ≥95% 7-day rolling pass rate on product-critical paths
+  without shrinking test scope or masking flakes via retries.
+
+world_class_definition: >
+  A world-class outcome means main is statistically stable: critical-path suites pass
+  on fresh runners with no scope reduction, flake rate is measured and bounded, and
+  regressions are fixed at root cause rather than quarantined without traceability.
+
+constraints:
+  - maker_must_not_equal_checker
+  - acceptance_asserts_outcome_not_symptom
+  - sealed_suite_non_maker_writable
+  - external_write_back_required_for_live_state
+  - irreversibles_require_human_go_gate
+  - no_self_referential_meta_loops
+  - flaky_verifiers_require_repeat_or_quorum
+
+sensitivity: medium  # low | medium | high
+
+autonomy: checkpoint  # dry-run | checkpoint | full
+
+contract_hash: "sha256:REPLACE_WITH_SEALED_CONTRACT_BYTES"
+
+acceptance_suite:
+  provenance: framer
+  sealed_path: acceptance/sealed/contract-v1.sha256
+  criteria:
+    - id: crit-main-pass-rate
+      asserts: outcome
+      oracle: oracle-main-pass-rate-7d
+      external_check: >
+        Query CI API for main branch test results over rolling 7 days on fresh runners;
+        compute pass rate for paths tagged product-critical; independent of loop artifacts.
+      green_means: >
+        Pass rate ≥95% on product-critical paths; denominator unchanged vs baseline manifest;
+        no new global retry policy; quarantined tests ≤ baseline count with linked issues.
+
+    - id: crit-flake-bounded
+      asserts: outcome
+      oracle: oracle-flake-stress-5x
+      external_check: >
+        Re-run product-critical suite 5× on clean runners; compare failure signatures
+        against loop-reported flake metrics from read-only CI telemetry.
+      green_means: >
+        ≤1 intermittent failure across 5 runs; no test removed from critical manifest;
+        flake budget within declared SLO.
+
+    - id: crit-coverage-floor
+      asserts: outcome
+      oracle: oracle-coverage-floor
+      external_check: >
+        Pull coverage report from CI artifact store at merged main SHA; verify against
+        frozen floor thresholds in sealed inputs.
+      green_means: >
+        Line and branch coverage ≥ sealed floors; no critical package below floor;
+        coverage computed on merged main, not loop working tree.
+
+irreversibles:
+  - id: irr-delete-test-files
+    description: Permanent removal of test files or suites from the repository
+    gate: human_go_required
+    blast_radius: high
+
+  - id: irr-merge-to-main
+    description: Merge to main that alters CI policy, quarantine lists, or critical-path manifest
+    gate: human_go_required
+    blast_radius: medium
+
+  - id: irr-disable-required-checks
+    description: Disable or bypass required branch protection checks
+    gate: human_go_required
+    blast_radius: high

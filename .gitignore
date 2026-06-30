@@ -26,7 +26,8 @@ node_modules/
 
 # Local editor / agent state + machine-specific symlinks (kept out of the public distro).
 # Note: .claude-plugin/ IS tracked and distributed; only local .claude/ state is ignored.
-# /LoopPrint is a machine-local self-symlink from the repo rename (safe to delete).
+# /LoopPrint and /Looptimal are machine-local self-symlinks from repo renames (safe to delete).
 .claude/
 .patchright/
 /LoopPrint
+/Looptimal

@@ -1,0 +1,36 @@
+{
+  "contract_ref": "sealed/contract.yaml",
+  "accepted_plan_ref": "mission.yaml",
+  "contract_hash": "1817bdad35db97ddd478e7c0a48971d5151e81ff8e091ab303aa7f665ca79631",
+  "artifacts": [
+    {
+      "path": "src/api/project_lookup.py",
+      "sha256": "64e8da256c43c93d30ff26bb5a2f4297f5914ed1b0cec81837c0bb6a5dc04e3e"
+    }
+  ],
+  "tool_receipts": [
+    {
+      "cmd": "python3 sealed/check_repro.py",
+      "exit": 0,
+      "stdout_sha": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "ts": "2026-06-28T00:00:00Z"
+    }
+  ],
+  "acceptance_results": [
+    {
+      "criterion": "C1",
+      "oracle": "pre-fix-repro-artifact",
+      "passed_by": "external_rerun",
+      "value": "pass"
+    },
+    {
+      "criterion": "C2",
+      "oracle": "no-regression-vs-sealed-baseline",
+      "passed_by": "external_rerun",
+      "value": "pass"
+    }
+  ],
+  "final_state_assertion": "A cache miss for a missing project returns 404 with a structured error; both baseline tests remain enumerated.",
+  "unresolved_risks": [],
+  "persisted_state_update_ref": "mission.yaml"
+}

@@ -1,5 +1,5 @@
 # campaign-spec.yaml — an ordered, SUPERVISED campaign of leaf loops.
-# A campaign is a COMPOSITION: each stage is a normal LoopPrint loop (its own
+# A campaign is a COMPOSITION: each stage is a normal Looptimal loop (its own
 # loop-spec + verify.sh + maker.sh + run-this-loop.sh). This file is the manifest;
 # lint validates it. The runner stays YAML-blind — the orchestrator (when built)
 # reads the generated `stages` file, never this YAML, and only interprets each

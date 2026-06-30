@@ -1,0 +1,85 @@
+# Looptimal Plan output — derived from Frame contract; do not mutate sealed acceptance_suite
+schema_version: "1.0"
+
+contract_ref: contracts/frame/ci-stability-v1.yaml
+contract_hash: "sha256:REPLACE_WITH_SEALED_CONTRACT_BYTES"
+
+capability_manifest:
+  - domain: test-infrastructure
+    rationale: Quarantine policy, runner hygiene, flake detection instrumentation
+    persona_template: templates/agent-persona.md
+  - domain: backend-engineering
+    rationale: Root-cause fixes in failing services and integration tests
+    persona_template: templates/agent-persona.md
+  - domain: platform-sre
+    rationale: CI resource contention, pipeline ordering, observability of test health
+    persona_template: templates/agent-persona.md
+  - domain: statistics
+    rationale: Pass-rate SLO math, flake confidence intervals, regression detection
+    persona_template: templates/agent-persona.md
+
+human_go_gate:
+  required: true
+  triggers:
+    - before_first_merge_to_main
+    - before_any_irreversible: irr-merge-to-main
+    - before_scope_change_to_critical_path_manifest
+  approver: human-operator
+  evidence_required:
+    - simulation.md completed with plan-hardening applied
+    - contract_hash matches sealed acceptance suite
+
+budget:
+  iters: 6
+  wallclock_minutes: 90
+  usd: 25.00
+
+lanes:
+  - id: lane-diagnose
+    archetype: Task
+    loop_spec: loops/diagnose-flakes/loop-spec.yaml
+    verifier_shape: gate
+    oracle: oracle-flake-stress-5x
+
+  - id: lane-fix
+    archetype: Persistent-ratchet
+    loop_spec: loops/fix-root-cause/loop-spec.yaml
+    verifier_shape: ratchet
+    oracle: oracle-main-pass-rate-7d
+
+  - id: lane-harden-ci
+    archetype: Supervised
+    loop_spec: loops/harden-ci-policy/loop-spec.yaml
+    verifier_shape: gate
+    oracle: oracle-coverage-floor
+
+tasks:
+  - id: task-baseline-telemetry
+    lane: lane-diagnose
+    capability: test-infrastructure
+    acceptance:
+      - crit-flake-bounded
+    irreversible: false
+
+  - id: task-root-cause-fixes
+    lane: lane-fix
+    capability: backend-engineering
+    acceptance:
+      - crit-main-pass-rate
+      - crit-flake-bounded
+    irreversible: false
+
+  - id: task-runner-hygiene
+    lane: lane-harden-ci
+    capability: platform-sre
+    acceptance:
+      - crit-main-pass-rate
+    irreversible: false
+
+  - id: task-merge-policy-pr
+    lane: lane-harden-ci
+    capability: test-infrastructure
+    acceptance:
+      - crit-main-pass-rate
+      - crit-coverage-floor
+    irreversible: true

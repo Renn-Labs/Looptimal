@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something in LoopPrint is broken — the wizard, a script, or a generated artifact
+about: Something in Looptimal is broken — the wizard, a script, or a generated artifact
 title: "[bug] "
 labels: bug
 ---

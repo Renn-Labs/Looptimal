@@ -1,6 +1,6 @@
 # critic-panel example
 
-A LoopPrint loop that gates on a **k-of-N quorum** of independent critics.
+A Looptimal loop that gates on a **k-of-N quorum** of independent critics.
 Three critics each score `artifact.md` against `rubric.md`; the loop is GREEN
 only when at least 2 of the 3 score >= 80.
 
@@ -33,7 +33,7 @@ against which rubric, with what verdict* — inspectable after the fact.
 The maker (`maker.sh`) dispatches to `claude`. Each critic targets a different
 provider: `codex`, `grok`, `gemini`. No critic shares a provider with the maker,
 so the panel is fully cross-provider — the strongest form of judge-independence
-LoopPrint supports.
+Looptimal supports.
 
 ## Single-provider acknowledgement
 

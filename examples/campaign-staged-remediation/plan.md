@@ -3,7 +3,7 @@
 ## Objective
 
 Bring a legacy module up to a machine-checkable spec in two supervised stages, with a human
-checkpoint between them. Each stage is an independent LoopPrint gate loop; the campaign
+checkpoint between them. Each stage is an independent Looptimal gate loop; the campaign
 manifest (`campaign-spec.yaml`) records the composition — it is not a new loop type.
 
 ## Why two stages (not one)

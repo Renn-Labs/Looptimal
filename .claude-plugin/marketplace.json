@@ -1,15 +1,15 @@
 {
   "name": "renn-labs",
-  "description": "Renn Labs' Claude Code marketplace — home of LoopPrint, the loop-design wizard that turns a vague goal into a runnable, self-verifying loop blueprint.",
+  "description": "Renn Labs' Claude Code marketplace — home of Looptimal, the outcome-loop orchestrator that turns an objective into a delivered, verified outcome (and contains the loop-design wizard, formerly LoopPrint).",
   "owner": {
     "name": "Renn Labs",
     "url": "https://github.com/Renn-Labs"
   },
   "plugins": [
     {
-      "name": "loopprint",
+      "name": "looptimal",
       "source": "./",
-      "description": "Interactive wizard that turns a vague goal into a runnable loop blueprint (state, external verifier, stop conditions; maker != checker)."
+      "description": "Turns an objective into a delivered, verified outcome — sealed acceptance suite, the right loop, a war-game pass, domain-expert execution (maker != checker), and a separate verifier. Contains the loop-design wizard (formerly LoopPrint) as its Design-loop mode."
     }
   ]
 }

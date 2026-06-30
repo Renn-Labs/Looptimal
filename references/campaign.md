@@ -1,6 +1,6 @@
 # Campaign — supervised multi-stage composition
 
-A **campaign** is an ordered set of independent LoopPrint leaf loops composed by a
+A **campaign** is an ordered set of independent Looptimal leaf loops composed by a
 `campaign-spec.yaml` manifest. It is a **composition**, not a new loop type: each stage is a
 normal loop with its own `loop-spec.yaml`, `verify.sh`, `maker.sh`, and `run-this-loop.sh`.
 The manifest records the order, success criteria, and human checkpoint requirement. The runner

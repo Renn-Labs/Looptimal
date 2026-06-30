@@ -1,6 +1,6 @@
 # Verifier cookbook
 
-LoopPrint ships reusable verifier recipes in [`templates/verifier-library.yaml`](../templates/verifier-library.yaml). Each recipe is a bash snippet to paste into `loops/<slug>/verify.sh`. The contract is binary: **exit 0 = GREEN**, **non-zero = RED**.
+Looptimal ships reusable verifier recipes in [`templates/verifier-library.yaml`](../templates/verifier-library.yaml). Each recipe is a bash snippet to paste into `loops/<slug>/verify.sh`. The contract is binary: **exit 0 = GREEN**, **non-zero = RED**.
 
 ## How the wizard picks a recipe
 

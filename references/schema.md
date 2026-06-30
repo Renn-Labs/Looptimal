@@ -1,7 +1,7 @@
-# Schema reference — the portable LoopPrint contract
+# Schema reference — the portable Looptimal contract
 
-LoopPrint's artifacts are plain YAML + POSIX shell. This page is the **canonical, versioned schema** for them, so
-any runtime can *emit* a conforming loop and any validator can *consume* one without coupling to LoopPrint's
+Looptimal's artifacts are plain YAML + POSIX shell. This page is the **canonical, versioned schema** for them, so
+any runtime can *emit* a conforming loop and any validator can *consume* one without coupling to Looptimal's
 internals.
 
 > **The executable schema is [`scripts/loopprint-lint.py`](../scripts/loopprint-lint.py).** This page is the
@@ -75,7 +75,7 @@ The format is pinned so it can cross runtime boundaries:
 - **Consume** — `run-this-loop.sh` consumes a loop via bash vars (YAML-blind); the wizard bridges spec → vars.
 
 **Honest scope:** there is **no external consumer path today**. This contract is a **defensive hedge** — it exists
-so that *if* another runtime (Ralph, OMX, your own harness) later wants to emit or consume LoopPrint loops, the
+so that *if* another runtime (Ralph, OMX, your own harness) later wants to emit or consume Looptimal loops, the
 format is already versioned and pinned. It is a published contract, not a near-term integration. All three review
 models rated this Low for exactly that reason; it ships as a forward-compatibility note.
 
@@ -99,7 +99,7 @@ YAML
 python3 scripts/loopprint-lint.py loops/ralph-debt/loop-spec.yaml   # the executable schema gates it
 ```
 
-This is the **emit** half of the contract. LoopPrint validates and (via the wizard + runner) can consume it; no
+This is the **emit** half of the contract. Looptimal validates and (via the wizard + runner) can consume it; no
 *third-party* runtime consumes it yet — that's the deferred half.
 
 ## Versioning policy

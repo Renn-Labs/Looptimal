@@ -1,0 +1,30 @@
+# Looptimal sealed oracle definition template
+# MUST be stored on a non-maker-writable path (e.g. acceptance/sealed/oracles/).
+# The executing maker agent MUST NOT have write permission to this file or sealed_inputs.
+# Verifier-outcome agent loads this definition read-only and re-pulls external_check independently.
+
+id: oracle-example-outcome-check
+capability: test-infrastructure
+kind: external_state  # external_state | artifact_hash | quorum_repeat | api_write_back
+
+sealed_inputs:
+  path: acceptance/sealed/inputs/oracle-example-v1.json
+  sha256: "sha256:REPLACE_WITH_SEALED_INPUT_BYTES"
+  contents_description: >
+    Frozen thresholds, endpoint URLs (read-only), critical-path manifest SHA,
+    baseline quarantine count, coverage floors — immutable after Frame seal.
+
+external_check: >
+  Independently query the authoritative external system (not loop artifacts):
+  e.g. CI API, metrics backend, warehouse read replica, or prod-like ephemeral env.
+  Recompute the outcome metric from live write-back; ignore maker stdout and self-reported GREEN.
+
+asserts: outcome  # outcome | invariant — must be outcome for acceptance criteria
+
+green_means: >
+  Concrete pass condition stated in measurable terms against sealed_inputs only.
+  Example: pass rate ≥95% over 7d; critical-path manifest hash unchanged;
+  coverage ≥ floor; reconciliation delta ≤ ε.
+
+# Deployment note: copy to acceptance/sealed/oracles/<id>.yaml and chmod read-only for maker role.
+# Record oracle id + sealed_inputs sha256 in contract acceptance_suite.criteria[].oracle.

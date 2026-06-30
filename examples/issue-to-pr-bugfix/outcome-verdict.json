@@ -1,0 +1,35 @@
+{
+  "result": "GREEN",
+  "contract_hash": "1817bdad35db97ddd478e7c0a48971d5151e81ff8e091ab303aa7f665ca79631",
+  "criteria": [
+    {
+      "criterion": "C1",
+      "passed": true,
+      "cmd": [
+        "python3",
+        "sealed/check_repro.py"
+      ],
+      "exits": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "criterion": "C2",
+      "passed": true,
+      "cmd": [
+        "python3",
+        "sealed/check_no_regression.py"
+      ],
+      "exits": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "findings": [],
+  "repeat": 3,
+  "ts": "2026-06-29T00:59:23Z"
+}

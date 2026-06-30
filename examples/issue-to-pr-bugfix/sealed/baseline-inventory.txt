@@ -1,0 +1,2 @@
+tests/api/test_project_lookup.py::test_existing_project_returns_200
+tests/api/test_project_lookup.py::test_missing_project_returns_404

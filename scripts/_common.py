@@ -1,0 +1,336 @@
+#!/usr/bin/env python3
+"""Shared, stdlib-only helpers for Looptimal's enforcement scripts.
+
+This is the SINGLE SOURCE OF TRUTH for the three things the linter (plan-time) and
+verify-outcome.py (Stage 6, outcome-time) must agree on:
+  * the canonical contract hash (prefix-tolerant),
+  * the "sealed vs maker-writable" path rule, and
+  * the anti-gaming heuristics (symptom / self-grade / no-op command).
+
+No third-party imports, no network. Config is parsed as a JSON-compatible YAML subset
+(mappings, lists, inline [] / {}, scalars) — no anchors, tags, or multi-line scalars.
+"""
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+# --------------------------------------------------------------------------- #
+# Anti-gaming heuristics (used identically by lint and verify-outcome)
+# --------------------------------------------------------------------------- #
+# A "symptom" is a cheap proxy a maker can satisfy WITHOUT achieving the outcome
+# (alert cleared by a restart, CI green by deleting tests, coverage % by trivia).
+SYMPTOM_PATTERN = re.compile(
+    r"\b("
+    r"alert[s]?[-_ ]?cleared|ci[-_ ]?green|build[-_ ]?green|"
+    r"tests?\s+pass(?:es|ed)?|suite\s+pass(?:es|ed)?|all\s+green|"
+    r"looks?\s+good|seems?\s+(?:fine|ok|okay|good)|"
+    r"\bdone\b|complete[d]?|finished|succeed(?:s|ed)?|"
+    r"coverage\s*(?:%|percent|increased|up)|"
+    r"lint[-_ ]?(?:score|clean)|complexity\s*(?:score|reduced|down)"
+    r")\b",
+    re.IGNORECASE,
+)
+# A criterion green_means is allowed to assert an OUTCOME; these phrases are symptom-only.
+SELF_GRADE_RE = re.compile(
+    r"\b("
+    r"self[-_\s]?grade[d]?|self[-_\s]?assess(?:ment|ed)?|self[-_\s]?reported|"
+    r"verifier_trace|appears?\s+correct|by\s+inspection|trust\s+me|"
+    r"maker[-_\s]?(?:approved|signed[-_\s]?off|review|says)|"
+    r"i\s+(?:think|believe|judge)"
+    r")\b",
+    re.IGNORECASE,
+)
+# Any concrete agent-id literal bound in a GENERIC file (must come from a profile instead).
+# Matches binding keys followed by something that looks like a real agent id.
+NATIVE_AGENT_RE = re.compile(
+    r"(?:^|[^A-Za-z_])(?:agent|executor|checker|verifier|reviewer|subagent[-_ ]?type)"
+    r"\s*[:=]\s*[\"']?"
+    r"([A-Za-z0-9][\w .:\-]*?"
+    r"(?:oh-my-claudecode|agent|reviewer|critic|-pro\b|engineer|specialist|"
+    r"claude|gpt-?5|codex|grok|gemini)"
+    r"[\w .:\-]*)",
+    re.IGNORECASE,
+)
+# Commands that always succeed regardless of state — never a valid external_check.
+NOOP_COMMANDS = frozenset({
+    "true", ":", "/bin/true", "/usr/bin/true", "exit", "exit 0", "echo",
+    "test", "/bin/echo", "printf", "cat", "ls", "pwd",
+})
+# An interpreter running INLINE code is maker-controlled, not a sealed check file.
+INLINE_INTERPRETERS = frozenset({"python", "python3", "sh", "bash", "zsh", "node",
+                                 "ruby", "perl", "php"})
+INLINE_EVAL_FLAGS = frozenset({"-c", "-e", "--eval", "--exec", "--command", "-"})
+# Designated sealed roots. A path is sealed only if it lives under one of these AND that
+# root is not itself executor-writable; callers MUST pass the path relative to the live work tree.
+SEALED_ROOTS = ("sealed/", "acceptance/sealed/")
+# Conventional maker-writable roots (the executor works here, so nothing sealed may live here).
+DEFAULT_WRITABLE_ROOTS = (
+    ".", "./", "tmp/", "temp/", "build/", "dist/", "out/", "artifacts/",
+    "workspace/", "work/", "scratch/", "loops/", "src/", "lib/", "app/",
+    "tests/", "test/", "scripts/", "bin/", "node_modules/", ".omc/", ".git/",
+)
+
+_HEX64 = re.compile(r"([0-9a-fA-F]{64})")
+
+
+class TinyYamlError(ValueError):
+    pass
+
+
+# --------------------------------------------------------------------------- #
+# Tiny YAML (JSON-compatible subset)
+# --------------------------------------------------------------------------- #
+def strip_comment(line: str) -> str:
+    in_single = in_double = False
+    out: list[str] = []
+    prev = ""
+    for ch in line:
+        if ch == "'" and not in_double and prev != "\\":
+            in_single = not in_single
+        elif ch == '"' and not in_single and prev != "\\":
+            in_double = not in_double
+        elif ch == "#" and not in_single and not in_double:
+            break
+        out.append(ch)
+        prev = ch
+    return "".join(out).rstrip()
+
+
+def parse_scalar(value: str) -> Any:
+    value = value.strip()
+    if value == "":
+        return ""
+    low = value.lower()
+    if low in {"true", "false"}:
+        return low == "true"
+    if low in {"null", "none", "~"}:
+        return None
+    if value in {"[]", "{}"} or (value[0], value[-1]) in {("[", "]"), ("{", "}")}:
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            try:
+                return ast.literal_eval(value)
+            except (ValueError, SyntaxError) as exc:
+                raise TinyYamlError(f"bad inline collection: {value!r}") from exc
+    if (value[0] == value[-1]) and value[0] in {'"', "'"} and len(value) >= 2:
+        try:
+            return ast.literal_eval(value)
+        except (ValueError, SyntaxError):
+            return value[1:-1]
+    try:
+        return int(value) if "." not in value else float(value)
+    except ValueError:
+        return value
+
+
+def preprocess(text: str) -> list[tuple[int, str]]:
+    rows: list[tuple[int, str]] = []
+    for raw in text.splitlines():
+        if "\t" in raw.replace("\t", " ") and "\t" in raw:
+            raise TinyYamlError("tabs are not supported in config indentation")
+        line = strip_comment(raw)
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        rows.append((indent, line.strip()))
+    return rows
+
+
+def parse_block(rows: list[tuple[int, str]], index: int, indent: int) -> tuple[Any, int]:
+    if index >= len(rows):
+        return {}, index
+    current_indent, content = rows[index]
+    if current_indent < indent:
+        return {}, index
+    if content.startswith("- "):
+        seq: list[Any] = []
+        while index < len(rows):
+            row_indent, item = rows[index]
+            if row_indent != indent or not item.startswith("- "):
+                break
+            body = item[2:].strip()
+            index += 1
+            if body == "":
+                value, index = parse_block(rows, index, indent + 2)
+                seq.append(value)
+            elif ":" in body and body[0] not in {"'", '"'}:
+                key, raw_value = body.split(":", 1)
+                obj: dict[str, Any] = {}
+                key, raw_value = key.strip(), raw_value.strip()
+                if raw_value:
+                    obj[key] = parse_scalar(raw_value)
+                else:
+                    nested, index = parse_block(rows, index, indent + 2)
+                    obj[key] = nested
+                while index < len(rows):
+                    nxt_indent, nxt = rows[index]
+                    if nxt_indent != indent + 2 or nxt.startswith("- "):
+                        break
+                    if ":" not in nxt:
+                        raise TinyYamlError(f"expected 'key: value' near {nxt!r}")
+                    k, v = nxt.split(":", 1)
+                    k, v = k.strip(), v.strip()
+                    index += 1
+                    if v:
+                        obj[k] = parse_scalar(v)
+                    else:
+                        nested, index = parse_block(rows, index, indent + 4)
+                        obj[k] = nested
+                seq.append(obj)
+            else:
+                seq.append(parse_scalar(body))
+        return seq, index
+
+    mapping: dict[str, Any] = {}
+    while index < len(rows):
+        row_indent, content = rows[index]
+        if row_indent < indent:
+            break
+        if row_indent > indent:
+            raise TinyYamlError(f"unexpected indentation near {content!r}")
+        if content.startswith("- "):
+            break
+        if ":" not in content:
+            raise TinyYamlError(f"expected 'key: value' near {content!r}")
+        key, raw_value = content.split(":", 1)
+        key, raw_value = key.strip(), raw_value.strip()
+        index += 1
+        if raw_value:
+            mapping[key] = parse_scalar(raw_value)
+        else:
+            nested, index = parse_block(rows, index, indent + 2)
+            mapping[key] = nested
+    return mapping, index
+
+
+def load_config(path: Path) -> Any:
+    text = Path(path).read_text(encoding="utf-8")
+    if not text.strip():
+        raise TinyYamlError(f"empty config file: {path}")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        rows = preprocess(text)
+        if not rows:
+            raise TinyYamlError(f"no parseable content: {path}")
+        parsed, index = parse_block(rows, 0, rows[0][0])
+        if index != len(rows):
+            raise TinyYamlError(f"unparsed trailing content in {path} at row {index}")
+        return parsed
+
+
+# --------------------------------------------------------------------------- #
+# Small typed accessors
+# --------------------------------------------------------------------------- #
+def as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def text_tree(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+# --------------------------------------------------------------------------- #
+# Canonical contract hash (prefix-tolerant: accepts "sha256:<hex>" or bare hex)
+# --------------------------------------------------------------------------- #
+def normalize_hash(value: Any) -> str:
+    if not value:
+        return ""
+    m = _HEX64.search(str(value))
+    return m.group(1).lower() if m else str(value).strip().lower()
+
+
+def canonical_contract_hash(contract: dict[str, Any]) -> str:
+    material = {k: v for k, v in dict(contract).items() if k != "contract_hash"}
+    payload = json.dumps(material, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+# --------------------------------------------------------------------------- #
+# Sealed-path rule: a path is SEALED iff the executor lanes cannot write to it.
+# --------------------------------------------------------------------------- #
+def executor_writable_roots(mission: dict[str, Any]) -> set[str]:
+    """Every path an executor lane may write to. The acceptance suite / sealed oracle
+    must NOT live under any of these, so the maker cannot edit the gate mid-loop."""
+    roots: set[str] = set(DEFAULT_WRITABLE_ROOTS)
+    cm = mission.get("capability_manifest")
+    if isinstance(cm, dict):
+        for cap in cm.values():
+            for p in as_list(as_dict(cap).get("allowed_paths")):
+                roots.add(str(p).replace("\\", "/").lstrip("/").rstrip("/") + "/")
+    for lane in as_list(mission.get("lanes")):
+        sd = as_dict(lane).get("state_dir")
+        if sd:
+            roots.add(str(sd).replace("\\", "/").lstrip("/").rstrip("/") + "/")
+    return roots
+
+
+def is_sealed(path_text: Any, writable_roots: set[str]) -> bool:
+    """SEALED iff the (work-tree-relative) path lives under a designated sealed root AND that
+    root is not itself executor-writable. The caller MUST pass the path relative to the live
+    work tree (resolve first): a literal 'sealed/x' that actually resolves under a writable
+    root such as loops/<slug>/sealed/x is NOT sealed and must be normalized before this call."""
+    p = str(path_text or "").replace("\\", "/").lstrip("/")
+    if not p or ".." in p.split("/"):
+        return False
+    if not any(p == r.rstrip("/") or p.startswith(r) for r in SEALED_ROOTS):
+        return False
+    for r in writable_roots:
+        r = r.rstrip("/")
+        if r and r not in {".", "./"} and (p == r or p.startswith(r + "/")):
+            return False
+    return True
+
+
+def is_noop_command(external_check: Any) -> bool:
+    """True if the external_check is empty or a command that always succeeds."""
+    if not external_check:
+        return True
+    if isinstance(external_check, str):
+        parts = external_check.strip().split()
+    elif isinstance(external_check, list):
+        parts = [str(x) for x in external_check]
+    else:
+        return True
+    if not parts:
+        return True
+    head = parts[0].strip()
+    joined = " ".join(parts).strip().lower()
+    if head in NOOP_COMMANDS or joined in NOOP_COMMANDS or Path(head).name in NOOP_COMMANDS:
+        return True
+    # An interpreter running inline code (python3 -c, sh -c, node -e, or program-from-stdin)
+    # is maker-controlled and trivially satisfiable — it is not a sealed check, so reject it.
+    if Path(head).name in INLINE_INTERPRETERS and any(a in INLINE_EVAL_FLAGS for a in parts[1:]):
+        return True
+    return False
+
+
+def candidate_paths(external_check: Any) -> list[str]:
+    """File-path-like arguments of an external_check (the oracle script + any path data).
+    Used to require that a check actually invokes a SEALED oracle script — not a tautological
+    system command (grep/make/uname) or a writable / out-of-tree script the maker controls."""
+    if isinstance(external_check, str):
+        parts = external_check.split()
+    elif isinstance(external_check, list):
+        parts = [str(x) for x in external_check]
+    else:
+        return []
+    out: list[str] = []
+    for a in parts:
+        a = a.strip()
+        if not a or a.startswith("-"):
+            continue
+        if "/" in a or a.endswith((".py", ".sh", ".bash", ".js", ".mjs", ".ts", ".rb", ".pl", ".php")):
+            out.append(a)
+    return out

@@ -1,15 +1,15 @@
 # Harness profiles — conforming to a specific system without coupling to it
 
-LoopPrint's core is generic: it works on plain Claude Code (or anything) with zero configuration, defaulting to
+Looptimal's core is generic: it works on plain Claude Code (or anything) with zero configuration, defaulting to
 a `loops/<slug>/` directory, a `verify.sh` gate, and a shell runner. But on a real harness (oh-my-claudecode,
 oh-my-codex/OMX, or your own), you usually want the generated blueprint to use *that* system's conventions —
 its state directory, its reviewer agent, its dispatch mechanism.
 
 The design rule that makes this safe:
 
-> **LoopPrint does not know about harnesses. A harness (or you) declares a *binding* that LoopPrint consumes.**
+> **Looptimal does not know about harnesses. A harness (or you) declares a *binding* that Looptimal consumes.**
 
-LoopPrint depends only on the abstract **binding contract** below — never on a hardcoded "harness X uses Y"
+Looptimal depends only on the abstract **binding contract** below — never on a hardcoded "harness X uses Y"
 matrix. That matrix is exactly what would rot every time OMC/OMX/SuperPowers cut a release, so it lives nowhere
 in this repo. The *values* are owned by whoever owns the volatile thing (the harness, or your `~/.loopprint`).
 
@@ -42,9 +42,9 @@ the generated package and instructions.
 [`profiles/`](../profiles/) contains **illustrative** example profiles (e.g. `oh-my-claudecode.example.yaml`).
 They are **not maintained against harness releases** — copy one to `~/.loopprint/profile.yaml` and adjust it to
 *your* installed version. Treat them as documentation of the contract, not a dependency. If your harness changes
-its conventions, update *your* profile; LoopPrint needs no release.
+its conventions, update *your* profile; Looptimal needs no release.
 
 ## Why this survives harness churn
 The entity that changes owns its own binding. When oh-my-claudecode bumps a convention, whoever maintains that
 harness (or you, in `~/.loopprint/profile.yaml`) updates the binding there — the same way a propagator keeps a
-project's instructions current. LoopPrint, depending only on the contract, is untouched.
+project's instructions current. Looptimal, depending only on the contract, is untouched.

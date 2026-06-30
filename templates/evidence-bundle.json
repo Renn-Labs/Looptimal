@@ -1,0 +1,79 @@
+{
+  "contract_ref": "contracts/frame/ci-stability-v1.yaml",
+  "contract_hash": "sha256:REPLACE_WITH_SEALED_CONTRACT_BYTES",
+  "accepted_plan_ref": "missions/ci-stability-v1/mission.yaml",
+  "artifacts": [
+    {
+      "path": "artifacts/ci/pass-rate-7d-report.json",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "path": "artifacts/ci/flake-stress-5x.log",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "path": "artifacts/coverage/main-coverage-summary.xml",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "tool_receipts": [
+    {
+      "cmd": "looptimal verify --suite acceptance/sealed/ --live-state ci://main",
+      "exit": 0,
+      "stdout_sha": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "ts": "2026-06-28T00:00:00Z"
+    },
+    {
+      "cmd": "ci-cli test --branch main --paths product-critical --runs 5 --fresh-runners",
+      "exit": 0,
+      "stdout_sha": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "ts": "2026-06-28T00:05:00Z"
+    }
+  ],
+  "verifier_trace": [
+    {
+      "step": "load_sealed_suite",
+      "oracle": "oracle-main-pass-rate-7d",
+      "sealed_inputs_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "maker_agent": null,
+      "checker_agent": "verifier-outcome-001",
+      "ts": "2026-06-28T00:00:00Z"
+    },
+    {
+      "step": "external_write_back",
+      "source": "ci-api",
+      "receipt_sha": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "ts": "2026-06-28T00:01:00Z"
+    },
+    {
+      "step": "quorum_repeat",
+      "oracle": "oracle-flake-stress-5x",
+      "attempts": 5,
+      "quorum_met": true,
+      "ts": "2026-06-28T00:05:00Z"
+    }
+  ],
+  "acceptance_results": [
+    {
+      "criterion": "crit-main-pass-rate",
+      "oracle": "oracle-main-pass-rate-7d",
+      "passed_by": "external_check",
+      "value": "96.2% pass rate; critical-path manifest unchanged"
+    },
+    {
+      "criterion": "crit-flake-bounded",
+      "oracle": "oracle-flake-stress-5x",
+      "passed_by": "quorum_repeat",
+      "value": "1 intermittent failure across 5 runs"
+    },
+    {
+      "criterion": "crit-coverage-floor",
+      "oracle": "oracle-coverage-floor",
+      "passed_by": "external_check",
+      "value": "line 82.1% branch 74.3% — above sealed floors"
+    }
+  ],
+  "final_state_assertion": "Main branch CI meets sealed outcome criteria: stable pass rate, bounded flakes, coverage floor held; no irreversible policy changes without recorded human GO.",
+  "unresolved_risks": [],
+  "persisted_state_update_ref": "state/ci-stability-v1/outcome-snapshot.json"
+}

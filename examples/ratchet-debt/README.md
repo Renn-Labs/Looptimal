@@ -1,6 +1,6 @@
 # Example: Ratchet — debt reduction loop
 
-A worked LoopPrint blueprint for reducing a committed list of technical-debt findings using the
+A worked Looptimal blueprint for reducing a committed list of technical-debt findings using the
 **ratchet** verifier shape. Each accepted iteration removes one finding; the committed `baseline`
 integer tightens post-accept so the bar never slides back. Pattern: **performance**.
 

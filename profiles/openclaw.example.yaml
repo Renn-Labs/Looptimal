@@ -2,7 +2,7 @@
 #
 # NOT maintained against OpenClaw releases. Copy this to ~/.loopprint/profile.yaml (or a project's
 # .loopprint/profile.yaml) and adjust the values to YOUR install. OpenClaw discovers folder-skills the
-# same way Claude does (~/.openclaw/skills/<name>/SKILL.md), so LoopPrint drops in unchanged — this
+# same way Claude does (~/.openclaw/skills/<name>/SKILL.md), so Looptimal drops in unchanged — this
 # profile only tunes how generated loops are wired. See ../references/profiles.md.
 
 harness: openclaw

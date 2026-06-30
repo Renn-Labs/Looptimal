@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an improvement to LoopPrint
+about: Suggest an improvement to Looptimal
 title: "[feat] "
 labels: enhancement
 ---
@@ -18,7 +18,7 @@ What's missing or painful? Lead with the problem, not the solution.
 **Proposed approach** (optional)
 
 **Invariant check**
-LoopPrint keeps a few hard invariants — does the idea hold them?
+Looptimal keeps a few hard invariants — does the idea hold them?
 - [ ] Stack-agnostic (no hardcoded per-harness matrix)
 - [ ] Zero-runtime-dep core (only lint / skillify may use PyYAML)
 - [ ] No network / no phone-home

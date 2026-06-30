@@ -1,0 +1,29 @@
+schema_version: 1
+contract_ref: "sealed/contract.yaml"
+contract_hash: "sha256:1817bdad35db97ddd478e7c0a48971d5151e81ff8e091ab303aa7f665ca79631"
+capability_manifest:
+  backend-api:
+    allowed_paths:
+      - "src/api/"
+      - "tests/api/"
+human_go_gate:
+  required: true
+  mode: checkpoint
+autonomy: checkpoint
+budget:
+  max_iterations: 4
+  max_wall_clock_minutes: 45
+lanes:
+  - id: L1
+    archetype: task
+    verifier_shape: gate
+    oracle:
+      sealed_path: "sealed/"
+tasks:
+  - id: T1
+    lane: L1
+    capability: backend-api
+    acceptance:
+      - C1
+      - C2
+    irreversible: false

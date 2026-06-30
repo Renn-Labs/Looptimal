@@ -1,4 +1,4 @@
-<!-- Thanks for contributing to LoopPrint! See CONTRIBUTING.md. -->
+<!-- Thanks for contributing to Looptimal! See CONTRIBUTING.md. -->
 
 ## What & why
 <!-- One or two lines: the change and the problem it solves. -->
@@ -10,8 +10,8 @@
 - [ ] Shell changes pass `shellcheck` (CI runs it)
 - [ ] Docs updated (README / SKILL.md / `references/`) if behavior changed
 
-## Invariants (LoopPrint keeps these — confirm none are broken)
+## Invariants (Looptimal keeps these — confirm none are broken)
 - [ ] Stack-agnostic core; no hardcoded per-harness matrix (bindings live in profiles)
 - [ ] Zero-runtime-dep core (only lint / skillify / profile-parsing may use PyYAML)
 - [ ] No network / no phone-home
-- [ ] maker ≠ checker — incl. on LoopPrint's own output; never auto-run; the runner never `eval`s a spec string
+- [ ] maker ≠ checker — incl. on Looptimal's own output; never auto-run; the runner never `eval`s a spec string
