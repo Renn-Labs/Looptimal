@@ -20,9 +20,24 @@ There is no build step. Before opening a PR, run:
 python3 scripts/loopprint-lint.py examples/ci-triage/loop-spec.yaml   # expect: GREEN
 python3 scripts/loopprint-doctor.py                                   # expect: HEALTHY (exit 0)
 python3 scripts/loopprint-detect.py                                   # sanity-check binding resolution
+python3 scripts/check-version-consistency.py                          # plugin.json == top CHANGELOG entry
 ```
 
 Keep changes small and self-contained; one logical change per PR.
+
+## Script naming: `loopprint-*` vs `looptimal-*`
+
+Both prefixes are intentional — they mark two **altitudes**, not leftover rebrand debt:
+
+| Prefix | Altitude | Examples |
+|-|-|-|
+| `loopprint-*` | **loop-spec** layer — the four-atom blueprint engine (formerly the standalone LoopPrint) | `loopprint-lint.py` (gates a `loop-spec.yaml`), `loopprint-doctor.py`, `loopprint-detect.py` |
+| `looptimal-*` | **outcome** layer — the objective→outcome orchestrator | `looptimal-lint.py` (gates the outcome contract), `verify-outcome.py` |
+
+The engine filenames were kept on the `loopprint-` prefix during the 2.0.0 rebrand to preserve git
+blame and avoid a risky mass-rename; the `~/.loopprint/profile.yaml` path resolves via a compat
+symlink to `~/.looptimal/`. A deliberate, test-covered rename to `looptimal-*` (with shims) is a
+candidate for a future minor release — don't rename engine scripts ad hoc in an unrelated PR.
 
 ## Developer Certificate of Origin (DCO)
 
