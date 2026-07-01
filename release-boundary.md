@@ -13,11 +13,11 @@ Authoritative record of what is **OPEN** (public, MIT) versus **WITHHELD** (prop
 disclosed) at each released version, plus the honestly-disclosed residual. The marketing/announcement
 surface may only assert what this document marks OPEN **and signed** for the version being referenced.
 
-> **Status note (2026-06-30):** The repository `Renn-Labs/Looptimal` is **public** and `main` already
+> **Status note (updated 2026-06-30):** The repository `Renn-Labs/Looptimal` is **public** and `main`
 > ships the full v2.0.0 rebrand + orchestrator (name, pipeline, `marketplace.json`/`plugin.json`
-> framing). The last *tagged release* is **v1.1.0 (LoopPrint)**. This document ratifies the v2.0.0
-> surface so the ledger matches reality; it does **not** itself authorize the public announcement —
-> that remains a separate maintainer "go."
+> framing). **v2.0.0 is now tagged and released** (`e6fc04b`, SSH-signed, GitHub Release live). This
+> document ratifies the v2.0.0 surface so the ledger matches reality; it does **not** itself authorize
+> the public announcement — that remains a separate maintainer "go."
 
 ---
 
@@ -33,7 +33,7 @@ surface may only assert what this document marks OPEN **and signed** for the ver
 
 ---
 
-## v2.0.0 — Looptimal (LIVE on `main`, AWAITING tag + ratification)
+## v2.0.0 — Looptimal (tagged + released 2026-06-30, ratified)
 
 What changed: the previously-private **LoopOptimal** orchestrator was absorbed into this repo as a
 single product (`CHANGELOG.md [2.0.0]`). Everything below is **already public on `main`**.
@@ -61,11 +61,12 @@ single product (`CHANGELOG.md [2.0.0]`). Everything below is **already public on
 
 1. ☑ Maintainer confirms the **WITHHELD** section (nothing from LoopOptimal should have stayed private). — Erik Ford, 2026-06-30
 2. ☑ `release-boundary.md` v2.0.0 block **signed** (verifiable attestation = the `git commit -s` adding this file).
-3. ☐ Run the `RELEASE.md` offline gates + hazard scan from a clean tree (RELEASE.md de-staled in PR #18).
-4. ☐ Tag **`v2.0.0`** and cut the GitHub Release (body = `CHANGELOG.md [2.0.0]`; see
-   `release-notes-v2.0.0.md`). This closes the phantom-version gap (manifests say 2.0.0, no tag exists).
-5. ☐ Fix the GitHub repo **description** (still reads "LoopPrint — an interactive wizard…").
+3. ☑ Run the `RELEASE.md` offline gates + hazard scan from a clean tree (RELEASE.md de-staled in PR #18). — all GREEN profile-clean, 2026-06-30
+4. ☑ Tag **`v2.0.0`** and cut the GitHub Release (body = `CHANGELOG.md [2.0.0]`; see
+   `release-notes-v2.0.0.md`). Closed the phantom-version gap. — tag `e6fc04b` (SSH-signed) + Release live, tag CI green, 2026-06-30
+5. ☑ Fix the GitHub repo **description** (now reads "Looptimal — turn an objective into a delivered, VERIFIED outcome…"). — 2026-06-30
 6. ☐ **Only then** — separate maintainer "go" — publish the announcement / reply referencing Looptimal.
 
-Until 1–5 are complete and signed, the public-facing reply surface stays **LoopPrint v1.1.0 + the
-verifier thesis** (the last ratified release).
+Items 1–5 are complete and signed; the v2.0.0 surface is ratified and live. Item 6 (the public
+announcement / reply referencing Looptimal) remains **open**, gated on a separate maintainer "go" —
+until that go, the public-facing reply surface holds at the ratified release.
