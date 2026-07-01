@@ -98,7 +98,7 @@ def test_lint_rejects_invalid_visibility_value(tmp_path):
     contract = _base_contract()
     contract["acceptance_suite"]["criteria"][0]["visibility"] = "totally-invisible"
     fx = _seal(tmp_path, contract)
-    ok, findings, _ = looptimal_lint.lint(fx["mission_path"], repo_root=tmp_path)
+    ok, findings, _ = looptimal_lint.lint(fx["mission_path"], repo_root=REPO)
     assert not ok
     assert any("visibility" in f and "totally-invisible" in f for f in findings)
 
@@ -108,7 +108,7 @@ def test_lint_accepts_both_valid_visibility_values(tmp_path):
         contract = _base_contract()
         contract["acceptance_suite"]["criteria"][0]["visibility"] = value
         fx = _seal(tmp_path, contract)
-        ok, findings, _ = looptimal_lint.lint(fx["mission_path"], repo_root=tmp_path)
+        ok, findings, _ = looptimal_lint.lint(fx["mission_path"], repo_root=REPO)
         assert ok, f"visibility={value!r} should lint clean, got {findings}"
 
 
@@ -116,7 +116,7 @@ def test_lint_accepts_both_valid_visibility_values(tmp_path):
 def test_sensitivity_high_with_no_checker_only_criteria_advises(tmp_path):
     contract = _base_contract(sensitivity="high")
     fx = _seal(tmp_path, contract)
-    ok, _findings, advisories = looptimal_lint.lint(fx["mission_path"], repo_root=tmp_path)
+    ok, _findings, advisories = looptimal_lint.lint(fx["mission_path"], repo_root=REPO)
     assert ok  # advisory only — never blocking
     assert any("zero checker-only criteria" in a for a in advisories)
 
@@ -125,7 +125,7 @@ def test_sensitivity_high_with_a_checker_only_criterion_is_silent(tmp_path):
     contract = _base_contract(sensitivity="high")
     contract["acceptance_suite"]["criteria"][0]["visibility"] = "checker-only"
     fx = _seal(tmp_path, contract)
-    ok, _findings, advisories = looptimal_lint.lint(fx["mission_path"], repo_root=tmp_path)
+    ok, _findings, advisories = looptimal_lint.lint(fx["mission_path"], repo_root=REPO)
     assert ok
     assert not any("zero checker-only criteria" in a for a in advisories)
 
@@ -133,7 +133,7 @@ def test_sensitivity_high_with_a_checker_only_criterion_is_silent(tmp_path):
 def test_sensitivity_low_never_advises_about_checker_only(tmp_path):
     contract = _base_contract(sensitivity="low")
     fx = _seal(tmp_path, contract)
-    _, _, advisories = looptimal_lint.lint(fx["mission_path"], repo_root=tmp_path)
+    _, _, advisories = looptimal_lint.lint(fx["mission_path"], repo_root=REPO)
     assert not any("checker-only" in a for a in advisories)
 
 
@@ -142,7 +142,7 @@ def test_lint_rejects_invalid_gate_type_value(tmp_path):
     contract = _base_contract()
     contract["acceptance_suite"]["criteria"][0]["gate_type"] = "squishy"
     fx = _seal(tmp_path, contract)
-    ok, findings, _ = looptimal_lint.lint(fx["mission_path"], repo_root=tmp_path)
+    ok, findings, _ = looptimal_lint.lint(fx["mission_path"], repo_root=REPO)
     assert not ok
     assert any("gate_type" in f and "squishy" in f for f in findings)
 
@@ -150,7 +150,7 @@ def test_lint_rejects_invalid_gate_type_value(tmp_path):
 def test_unset_gate_type_defaults_to_hard_no_advisory(tmp_path):
     contract = _base_contract()  # no gate_type set at all
     fx = _seal(tmp_path, contract)
-    ok, _findings, advisories = looptimal_lint.lint(fx["mission_path"], repo_root=tmp_path)
+    ok, _findings, advisories = looptimal_lint.lint(fx["mission_path"], repo_root=REPO)
     assert ok
     assert not any("gate_type: soft" in a for a in advisories)
 
@@ -163,7 +163,7 @@ def test_single_hard_criterion_among_softs_silences_advisory(tmp_path):
         "external_check": ["python3", "sealed/judge.py"], "green_means": "scores >= 80",
     })
     fx = _seal(tmp_path, contract)
-    _, _, advisories = looptimal_lint.lint(fx["mission_path"], repo_root=tmp_path)
+    _, _, advisories = looptimal_lint.lint(fx["mission_path"], repo_root=REPO)
     assert not any("gate_type: soft" in a for a in advisories)
 
 
@@ -171,6 +171,6 @@ def test_all_soft_suite_advises(tmp_path):
     contract = _base_contract()
     contract["acceptance_suite"]["criteria"][0]["gate_type"] = "soft"
     fx = _seal(tmp_path, contract)
-    ok, _findings, advisories = looptimal_lint.lint(fx["mission_path"], repo_root=tmp_path)
+    ok, _findings, advisories = looptimal_lint.lint(fx["mission_path"], repo_root=REPO)
     assert ok  # advisory only — never blocking
     assert any("gate_type: soft" in a for a in advisories)
