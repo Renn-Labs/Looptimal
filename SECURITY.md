@@ -31,8 +31,22 @@ criterion to invoke a sealed, workdir-contained oracle script, and strips interp
 plus the checker controlling `--workdir` (the real target repo, not the maker's bundle dir). The
 **framer must own the `sealed/` directory** so the maker cannot author the contract or the oracle
 scripts. Every other gaming vector is mechanically closed and exploit-tested, but Looptimal is **not**
-marketed as fully tamper-proof against a maker who can write the sealed dir — a cryptographic framer
-hash-pin for the sealed contract is planned to remove even that deployment-level trust.
+marketed as fully tamper-proof against a maker who can write the sealed dir.
+
+**Cryptographic hardening (available, opt-in).** `scripts/_common.py::canonical_contract_hash()`
+supports an HMAC-SHA256 keyed digest (`--key-file` / `LOOPTIMAL_FRAMER_KEY` on `verify-outcome.py`
+and `looptimal-lint.py`) that also folds in a manifest of every file under `sealed/` — binding the
+oracle *scripts* a criterion's `external_check` actually invokes, not just the criteria text
+referencing them (previously zero cryptographic binding; only the `is_sealed()` filesystem-
+permission check protected them). Without a key, `canonical_contract_hash()` falls back to the
+original unkeyed sha256 self-digest — fully backward compatible, but weaker: anyone who can write
+the sealed contract can also recompute a matching unkeyed hash after tampering. **The key itself
+must never live under `sealed/` or anywhere the maker/executor can read** — it belongs wherever the
+checker already keeps `--workdir` out of the maker's reach; a fresh key via `secrets.token_bytes(32)`
+per mission, never committed to a repo. This closes the specific residual above (spec/oracle-script
+tampering); it does not remove the underlying trust root (OS permissions + checker-controlled
+`--workdir`) — a deployment where the checker doesn't actually control either is still unprotected,
+key or no key.
 
 ## Reporting a vulnerability
 Please open a private security advisory on the repository (GitHub → Security → Report a vulnerability) rather than

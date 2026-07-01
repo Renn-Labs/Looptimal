@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import hmac
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -76,6 +78,28 @@ DEFAULT_WRITABLE_ROOTS = (
 )
 
 _HEX64 = re.compile(r"([0-9a-fA-F]{64})")
+
+FRAMER_KEY_ENV = "LOOPTIMAL_FRAMER_KEY"  # hex-encoded; checker-side only, never repo-committed
+
+
+def resolve_framer_key(key_file: str | None) -> bytes | None:
+    """Resolve the framer's HMAC key (hex-encoded), checker-side only. Precedence: `key_file`,
+    then the LOOPTIMAL_FRAMER_KEY env var. Returns None if neither is set — the caller then
+    falls back to the original unkeyed sha256 (fully backward compatible; see
+    canonical_contract_hash's docstring). This function only ever reads `key_file` / the env
+    var — never anything under a mission's --workdir; keeping the key outside that boundary is
+    the checker's own responsibility, same as --workdir itself already is (see SECURITY.md)."""
+    raw: str | None = None
+    if key_file:
+        raw = Path(key_file).read_text(encoding="utf-8").strip()
+    elif os.environ.get(FRAMER_KEY_ENV):
+        raw = os.environ[FRAMER_KEY_ENV].strip()
+    if not raw:
+        return None
+    try:
+        return bytes.fromhex(raw)
+    except ValueError as exc:
+        raise SystemExit(f"--key-file/{FRAMER_KEY_ENV} must be hex-encoded: {exc}")
 
 
 class TinyYamlError(ValueError):
@@ -250,10 +274,65 @@ def normalize_hash(value: Any) -> str:
     return m.group(1).lower() if m else str(value).strip().lower()
 
 
-def canonical_contract_hash(contract: dict[str, Any]) -> str:
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def sealed_dir_materials(sealed_dir: Path, exclude: Path | None = None) -> dict[str, str]:
+    """Sorted {relpath: sha256} of every file under sealed_dir — the in-toto "materials" idea,
+    folded into the contract hash so the oracle SCRIPTS a criterion's external_check actually
+    invokes are cryptographically bound, not just protected by the is_sealed() filesystem-
+    permission check. `exclude` (typically the sealed contract file itself, whose content is
+    already covered via the parsed contract mapping) is skipped to avoid a circular hash."""
+    materials: dict[str, str] = {}
+    if not sealed_dir.is_dir():
+        return materials
+    exclude_resolved = exclude.resolve() if exclude else None
+    for path in sorted(sealed_dir.rglob("*")):
+        if path.is_dir():
+            continue
+        if exclude_resolved is not None and path.resolve() == exclude_resolved:
+            continue
+        materials[path.relative_to(sealed_dir).as_posix()] = _sha256_file(path)
+    return materials
+
+
+def canonical_contract_hash(
+    contract: dict[str, Any],
+    *,
+    key: bytes | None = None,
+    sealed_dir: Path | None = None,
+    exclude: Path | None = None,
+) -> str:
+    """The canonical hash of a sealed contract.
+
+    Backward compatible by construction: called with no keyword args (as every pre-existing
+    call site does), this is byte-identical to the original unkeyed sha256-over-the-contract-
+    mapping behavior — no forced break for any contract sealed before this function grew these
+    parameters.
+
+    `sealed_dir`, when given, folds a manifest of every file under it into the hashed material —
+    binding the oracle scripts a criterion's external_check invokes, not just the contract text
+    referencing them (previously zero cryptographic binding; only the is_sealed() filesystem-
+    permission check protected them).
+
+    `key`, when given, switches from an unkeyed self-digest (anyone who can write the contract
+    can recompute a matching hash after tampering) to a keyed HMAC-SHA256 (only someone holding
+    `key` can produce a valid hash). The key MUST live outside any path the executor/maker can
+    read — never under `sealed_dir`, never committed to a repo — the same trust boundary this
+    project already documents for the checker controlling `--workdir`.
+    """
     material = {k: v for k, v in dict(contract).items() if k != "contract_hash"}
+    if sealed_dir is not None:
+        material["__sealed_materials__"] = sealed_dir_materials(sealed_dir, exclude=exclude)
     payload = json.dumps(material, sort_keys=True, separators=(",", ":"),
                          ensure_ascii=True).encode("utf-8")
+    if key:
+        return hmac.new(key, payload, hashlib.sha256).hexdigest()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -291,6 +370,32 @@ def is_sealed(path_text: Any, writable_roots: set[str]) -> bool:
         if r and r not in {".", "./"} and (p == r or p.startswith(r + "/")):
             return False
     return True
+
+
+VALID_VISIBILITIES = ("maker-visible", "checker-only")
+VALID_GATE_TYPES = ("hard", "soft")
+
+
+def maker_safe_view(contract: dict[str, Any]) -> dict[str, Any]:
+    """The view that Stage-5 Execute context-assembly should hand the maker: criteria marked
+    `visibility: checker-only` (an omitted/unrecognized value defaults to maker-visible) are
+    redacted down to just `id`/`category` — never `oracle`/`external_check`/`green_means` text,
+    the parts that let a maker aim at the gate instead of the fix. Stage 6 (verify-outcome.py) is
+    completely unaffected by this — it always operates on the full, unredacted sealed contract;
+    this function is only ever for what gets shown to the maker beforehand."""
+    view = dict(contract)
+    suite = as_dict(view.get("acceptance_suite"))
+    if not suite:
+        return view
+    redacted: list[Any] = []
+    for raw in as_list(suite.get("criteria")):
+        c = as_dict(raw)
+        if str(c.get("visibility") or "maker-visible").strip().lower() == "checker-only":
+            redacted.append({"id": c.get("id"), "category": c.get("category")})
+        else:
+            redacted.append(dict(c))
+    view["acceptance_suite"] = {**suite, "criteria": redacted}
+    return view
 
 
 def is_noop_command(external_check: Any) -> bool:

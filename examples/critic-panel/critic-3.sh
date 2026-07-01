@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # critic-3.sh — deterministic stub critic (cross-provider: gemini).
 # Real use: swap the echo for a live dispatch, e.g.:
-#   score=$(gemini "Score artifact.md against rubric.md 0-100. Output integer only.")
+#   gemini 'Score artifact.md against rubric.md 0-100. Output JSON only: {"score": N, "reason": "..."}'
 # PROVIDER=gemini
 set -euo pipefail
 
@@ -18,5 +18,5 @@ done
 [ -f "$RUBRIC" ]   || { echo "critic-3: rubric not found: $RUBRIC" >&2; exit 1; }
 [ -f "$ARTIFACT" ] || { echo "critic-3: artifact not found: $ARTIFACT" >&2; exit 1; }
 
-# Deterministic stub score — replace with live LLM dispatch for real judging.
-echo 70
+# Deterministic stub verdict — replace with live LLM dispatch for real judging.
+echo '{"score": 70, "reason": "Below threshold: Completeness dimension is missing the rollback-plan subsection."}'

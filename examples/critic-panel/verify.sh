@@ -2,8 +2,11 @@
 # verify.sh — critic-panel fan-out gate for the critic-panel example.
 # Derived from the critic-panel recipe in templates/verifier-library.yaml.
 # EXIT 0 (GREEN) iff >= QUORUM_K critics score ARTIFACT >= THRESHOLD.
-# Emits critics.jsonl (one JSON line per critic) in the working directory.
-# READ-ONLY: rubric.md and artifact.md are never modified.
+# Emits critics.jsonl (one JSON line per critic, {score, reason} + provenance) in the working
+# directory. Each critic-N.sh prints a JSON verdict {"score": N, "reason": "..."} on stdout —
+# parsed via python3 -c (never eval'd as shell) and re-serialized through json.dumps so a
+# reason containing quotes/newlines can't corrupt the jsonl line. READ-ONLY: rubric.md and
+# artifact.md are never modified.
 set -euo pipefail
 
 RUBRIC="rubric.md"
@@ -21,19 +24,35 @@ rsha=$(sha "$RUBRIC")
 asha=$(sha "$ARTIFACT")
 pass=0
 
-while IFS= read -r i; do
+for i in $(seq 1 "$N"); do
   script="./critic-${i}.sh"
-  score=$(bash "$script" --rubric "$RUBRIC" --artifact "$ARTIFACT") || score=0
-  ok=false
-  if [ "${score:-0}" -ge "$THRESHOLD" ]; then
-    ok=true
-    pass=$((pass + 1))
-  fi
+  raw=$(bash "$script" --rubric "$RUBRIC" --artifact "$ARTIFACT") || raw='{"score": 0, "reason": "critic script exited non-zero"}'
   provider=$(grep -m1 -oE 'PROVIDER=[A-Za-z0-9_-]+' "$script" | cut -d= -f2 || true)
-  printf '{"ts":"%s","critic":"critic-%s","provider":"%s","score":%s,"threshold":%s,"pass":%s,"rubric_sha":"%s","artifact_sha":"%s","n":%s,"quorum_k":%s}\n' \
-    "$(date -u +%FT%TZ)" "$i" "${provider:-unknown}" "${score:-0}" \
-    "$THRESHOLD" "$ok" "$rsha" "$asha" "$N" "$QUORUM_K" >> critics.jsonl
-done < <(seq 1 "$N")
+  ok=$(RAW="$raw" TS="$(date -u +%FT%TZ)" CRITIC="critic-$i" PROVIDER="${provider:-unknown}" \
+       THRESHOLD="$THRESHOLD" RSHA="$rsha" ASHA="$asha" NN="$N" QK="$QUORUM_K" python3 -c '
+import json, os
+
+try:
+    verdict = json.loads(os.environ["RAW"])
+    score = int(verdict.get("score", 0))
+    reason = str(verdict.get("reason", ""))
+except (json.JSONDecodeError, ValueError, TypeError, KeyError):
+    score, reason = 0, "critic verdict was not valid JSON {score, reason}"
+
+threshold = int(os.environ["THRESHOLD"])
+ok = score >= threshold
+line = {
+    "ts": os.environ["TS"], "critic": os.environ["CRITIC"], "provider": os.environ["PROVIDER"],
+    "score": score, "reason": reason, "threshold": threshold, "pass": ok,
+    "rubric_sha": os.environ["RSHA"], "artifact_sha": os.environ["ASHA"],
+    "n": int(os.environ["NN"]), "quorum_k": int(os.environ["QK"]),
+}
+with open("critics.jsonl", "a") as f:
+    f.write(json.dumps(line) + "\n")
+print("1" if ok else "0")
+')
+  [ "$ok" = "1" ] && pass=$((pass + 1))
+done
 
 if [ "$pass" -ge "$QUORUM_K" ]; then
   echo "critic-panel: quorum PASS ($pass/$N, need $QUORUM_K)"

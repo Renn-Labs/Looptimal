@@ -34,6 +34,8 @@ from _common import (  # noqa: E402
     SELF_GRADE_RE,
     SYMPTOM_PATTERN,
     NATIVE_AGENT_RE,
+    VALID_GATE_TYPES,
+    VALID_VISIBILITIES,
     TinyYamlError,
     as_dict,
     as_list,
@@ -44,6 +46,7 @@ from _common import (  # noqa: E402
     is_sealed,
     load_config,
     normalize_hash,
+    resolve_framer_key,
     text_tree,
 )
 
@@ -117,15 +120,21 @@ def human_gate_required(mission: dict[str, Any]) -> bool:
     return False
 
 
-def lint(mission_path: Path, repo_root: Path | None = None) -> tuple[bool, list[str]]:
+def lint(mission_path: Path, repo_root: Path | None = None,
+        framer_key: bytes | None = None) -> tuple[bool, list[str], list[str]]:
+    """Returns (ok, findings, advisories). `findings` are blocking (RED); `advisories` are
+    non-blocking nudges (never affect `ok`) — same distinction verify-outcome.py's own
+    `advisories` field uses, and the blocking/advisory split loopprint-lint.py already
+    established for critic-panel checks."""
     repo_root = (repo_root or Path(__file__).resolve().parent.parent).resolve()
     findings: list[str] = []
+    advisories: list[str] = []
     mission_path = mission_path.resolve()
 
     try:
         mission = as_dict(load_config(mission_path))
     except (TinyYamlError, OSError) as exc:
-        return False, [f"cannot parse mission: {exc}"]
+        return False, [f"cannot parse mission: {exc}"], []
 
     for key in REQUIRED_MISSION_KEYS:
         if key not in mission:
@@ -133,22 +142,33 @@ def lint(mission_path: Path, repo_root: Path | None = None) -> tuple[bool, list[
 
     contract_ref = mission.get("contract_ref")
     if not contract_ref:
-        return False, findings + ["mission has no contract_ref"]
+        return False, findings + ["mission has no contract_ref"], advisories
     contract_path = (mission_path.parent / str(contract_ref)).resolve()
     if ".." in str(contract_ref).replace("\\", "/").split("/"):
         findings.append(f"contract_ref must not traverse upward: {contract_ref}")
     try:
         contract = as_dict(load_config(contract_path))
     except (TinyYamlError, OSError) as exc:
-        return False, findings + [f"referenced contract not loadable ({contract_path}): {exc}"]
+        return False, findings + [f"referenced contract not loadable ({contract_path}): {exc}"], advisories
 
     # --- contract_hash is the canonical hash of the sealed contract (no tampering) ---
-    canonical = canonical_contract_hash(contract)
+    # sealed_dir-folding is coupled to framer_key being set, same rule verify-outcome.py
+    # follows — an unkeyed check must keep validating a contract sealed the old way.
+    canonical = canonical_contract_hash(
+        contract, key=framer_key,
+        sealed_dir=contract_path.parent if framer_key else None,
+        exclude=contract_path if framer_key else None,
+    )
     if normalize_hash(contract.get("contract_hash")) != canonical:
         findings.append("contract.contract_hash is not the canonical hash of the contract "
                         "(tampered, drifted, or unstamped)")
     if normalize_hash(mission.get("contract_hash")) != canonical:
         findings.append("mission.contract_hash does not match the canonical contract hash")
+    if framer_key is None and str(contract.get("sensitivity") or "").strip().lower() == "high":
+        advisories.append(
+            "sensitivity: high with no --key-file / LOOPTIMAL_FRAMER_KEY configured — the "
+            "contract hash is an unkeyed sha256 self-digest; a maker who can write the sealed "
+            "contract can also recompute it. A keyed run is strongly recommended here.")
 
     suite = as_dict(contract.get("acceptance_suite"))
     if str(suite.get("provenance") or "").strip().lower() != "framer":
@@ -185,6 +205,43 @@ def lint(mission_path: Path, repo_root: Path | None = None) -> tuple[bool, list[
             findings.append(f"criterion {cid}: green_means asserts a symptom/self-grade, not an outcome: {gm!r}")
         if str(c.get("asserts") or "").strip().lower() not in {"outcome", ""}:
             findings.append(f"criterion {cid}: asserts must be 'outcome'")
+        vis = c.get("visibility")
+        if vis is not None and str(vis).strip().lower() not in VALID_VISIBILITIES:
+            findings.append(f"criterion {cid}: visibility must be one of "
+                            f"{VALID_VISIBILITIES} (got {vis!r})")
+        gt = c.get("gate_type")
+        if gt is not None and str(gt).strip().lower() not in VALID_GATE_TYPES:
+            findings.append(f"criterion {cid}: gate_type must be one of "
+                            f"{VALID_GATE_TYPES} (got {gt!r})")
+
+    # sensitivity: high missions get a soft nudge toward at least one holdout criterion — never
+    # a REJECT (that stays reserved for the Tier-0 loop-worthiness gate), just a nudge: a maker
+    # that can read every criterion tends to aim at the gate, not the fix.
+    if str(contract.get("sensitivity") or "").strip().lower() == "high":
+        checker_only = sum(
+            1 for raw in criteria
+            if str(as_dict(raw).get("visibility") or "maker-visible").strip().lower() == "checker-only"
+        )
+        if checker_only == 0:
+            advisories.append(
+                "sensitivity: high with zero checker-only criteria — every acceptance check is "
+                "maker-visible. Consider marking at least one criterion visibility: checker-only "
+                "so Stage-5 Execute context-assembly can hold it back from the maker (see "
+                "references/pipeline.md).")
+
+    # A suite where every criterion explicitly declares gate_type: soft has no deterministic
+    # floor at all — an unset gate_type defaults to hard, so this only fires when the framer
+    # went out of their way to mark ALL of them soft (a rubric/human-vote-only suite is a real,
+    # legitimate pattern for subjective quality — just one worth a nudge, not a REJECT).
+    if criteria and all(
+        str(as_dict(raw).get("gate_type") or "hard").strip().lower() == "soft" for raw in criteria
+    ):
+        advisories.append(
+            "every criterion in this suite is gate_type: soft — no deterministic/re-runnable "
+            "gate at all. A soft-only suite (rubric/human-vote judgment) is legitimate for "
+            "subjective quality, but has no floor a maker's self-report can't also satisfy by "
+            "coincidence. Consider pairing at least one hard gate if any part of the goal is "
+            "machine-checkable — see templates/verifier-library.yaml's gate_type notes.")
 
     # --- per-lane oracle sealing + ratchet scope ---
     for lane in as_list(mission.get("lanes")):
@@ -267,7 +324,7 @@ def lint(mission_path: Path, repo_root: Path | None = None) -> tuple[bool, list[
     if any(tok in obj for tok in META_RE):
         findings.append("self-referential / meta loop (Looptimal verifying or approving itself) — Tier-0 REJECT")
 
-    return (len(findings) == 0), findings
+    return (len(findings) == 0), findings, advisories
 
 
 def run_selftest() -> int:
@@ -313,12 +370,57 @@ def run_selftest() -> int:
         }
         (run / "mission.yaml").write_text(_json.dumps(mission), encoding="utf-8")
 
-        ok, findings = lint(run / "mission.yaml", repo_root=root)
+        ok, findings, advisories = lint(run / "mission.yaml", repo_root=root)
         if not ok:
             print("SELFTEST FAIL (good plan flagged):", findings)
             return 1
+        if advisories:
+            print("SELFTEST FAIL (non-sensitive mission produced an advisory — should be silent):",
+                 advisories)
+            return 1
 
-        # tampering must be caught
+        # sensitivity: high + no key must produce the advisory prominently, and a keyed run
+        # (with sealed_dir folded in) must clear it while still passing.
+        sensitive = dict(contract); sensitive["sensitivity"] = "high"
+        chash_s = canonical_contract_hash(sensitive)
+        sensitive["contract_hash"] = f"sha256:{chash_s}"
+        (run / "sealed" / "contract.yaml").write_text(_json.dumps(sensitive), encoding="utf-8")
+        m_s = dict(mission); m_s["contract_hash"] = chash_s
+        (run / "mission.yaml").write_text(_json.dumps(m_s), encoding="utf-8")
+        _, _, adv_high = lint(run / "mission.yaml", repo_root=root)
+        if not any("no --key-file" in a for a in adv_high):
+            print("SELFTEST FAIL (sensitivity: high with no key produced no key advisory):", adv_high)
+            return 1
+        if not any("zero checker-only criteria" in a for a in adv_high):
+            print("SELFTEST FAIL (sensitivity: high with no checker-only criteria produced no "
+                 "holdout advisory):", adv_high)
+            return 1
+        demo_key = b"\x11" * 32
+        chash_keyed = canonical_contract_hash(sensitive, key=demo_key,
+                                              sealed_dir=(run / "sealed"),
+                                              exclude=(run / "sealed" / "contract.yaml"))
+        sensitive_keyed = dict(sensitive); sensitive_keyed["contract_hash"] = f"sha256:{chash_keyed}"
+        (run / "sealed" / "contract.yaml").write_text(_json.dumps(sensitive_keyed), encoding="utf-8")
+        m_keyed = dict(mission); m_keyed["contract_hash"] = chash_keyed
+        (run / "mission.yaml").write_text(_json.dumps(m_keyed), encoding="utf-8")
+        ok_keyed, findings_keyed, adv_keyed = lint(run / "mission.yaml", repo_root=root,
+                                                   framer_key=demo_key)
+        if not ok_keyed:
+            print("SELFTEST FAIL (honest keyed contract flagged):", findings_keyed)
+            return 1
+        if any("no --key-file" in a for a in adv_keyed):
+            print("SELFTEST FAIL (keyed run still advised about a missing key):", adv_keyed)
+            return 1
+        # the checker-only-criteria advisory is orthogonal to the key advisory and correctly
+        # still fires here — this fixture has zero checker-only criteria regardless of keying.
+        if not any("zero checker-only criteria" in a for a in adv_keyed):
+            print("SELFTEST FAIL (expected the still-orthogonal holdout advisory to persist):",
+                 adv_keyed)
+            return 1
+
+        # restore the plain (non-sensitive, unkeyed) contract, then tamper it — must be caught.
+        (run / "sealed" / "contract.yaml").write_text(_json.dumps(contract), encoding="utf-8")
+        (run / "mission.yaml").write_text(_json.dumps(mission), encoding="utf-8")
         bad = dict(contract)
         bad["acceptance_suite"] = dict(contract["acceptance_suite"])
         bad["acceptance_suite"]["criteria"] = [dict(contract["acceptance_suite"]["criteria"][0])]
@@ -327,7 +429,7 @@ def run_selftest() -> int:
         (run / "sealed" / "contract.yaml").write_text(_json.dumps(bad), encoding="utf-8")
         m2 = dict(mission); m2["contract_hash"] = canonical_contract_hash(bad)
         (run / "mission.yaml").write_text(_json.dumps(m2), encoding="utf-8")
-        ok2, _ = lint(run / "mission.yaml", repo_root=root)
+        ok2, _, _ = lint(run / "mission.yaml", repo_root=root)
         if ok2:
             print("SELFTEST FAIL (no-op external_check passed)")
             return 1
@@ -340,12 +442,18 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Validate a Looptimal mission.yaml and its sealed contract.")
     ap.add_argument("path", nargs="?", help="Path to mission.yaml")
     ap.add_argument("--selftest", action="store_true", help="Run built-in self-test")
+    ap.add_argument("--key-file", help="path to a hex-encoded framer HMAC key (checker-side "
+                    "only; alternative: the LOOPTIMAL_FRAMER_KEY env var). Omit to use the "
+                    "original unkeyed sha256 (backward compatible, weaker).")
     args = ap.parse_args(argv)
     if args.selftest:
         return run_selftest()
     if not args.path:
         ap.error("path to mission.yaml is required (or use --selftest)")
-    ok, findings = lint(Path(args.path))
+    framer_key = resolve_framer_key(args.key_file)
+    ok, findings, advisories = lint(Path(args.path), framer_key=framer_key)
+    for a in advisories:
+        print(f"   ~ {a}")
     if ok:
         print("GREEN\nmission and contract passed Looptimal lint")
         return 0

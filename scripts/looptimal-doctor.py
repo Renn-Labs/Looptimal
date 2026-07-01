@@ -31,6 +31,7 @@ REQUIRED = [
     "scripts/_common.py", "scripts/looptimal-detect.py",
     "examples/issue-to-pr-bugfix/mission.yaml",
     "examples/issue-to-pr-bugfix/sealed/contract.yaml",
+    "examples/issue-to-pr-bugfix/DEMO-KEY-NOT-SECRET.hex",
 ]
 SCRIPTS = [
     "scripts/looptimal-lint.py",
@@ -68,9 +69,15 @@ def run_checks(fix: bool) -> list[tuple[str, str, str | None]]:
 
     lint = REPO / "scripts/looptimal-lint.py"
     example = REPO / "examples/issue-to-pr-bugfix/mission.yaml"
+    # The bundled example seals its contract with a loudly-marked, non-secret DEMO key (see
+    # examples/issue-to-pr-bugfix/DEMO-KEY-NOT-SECRET.hex) to demonstrate the HMAC-keyed
+    # hash-pin end-to-end — its contract_hash is genuinely not the plain unkeyed sha256.
+    demo_key = REPO / "examples/issue-to-pr-bugfix/DEMO-KEY-NOT-SECRET.hex"
     if lint.is_file() and example.is_file():
-        r = subprocess.run([sys.executable, str(lint), str(example)],
-                           capture_output=True, text=True)
+        cmd = [sys.executable, str(lint), str(example)]
+        if demo_key.is_file():
+            cmd += ["--key-file", str(demo_key)]
+        r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             findings.append(("FAIL", "bundled example does not lint GREEN",
                              (r.stdout + r.stderr).strip()[-300:]))

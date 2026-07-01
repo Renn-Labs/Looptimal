@@ -1,0 +1,5 @@
+# golden set: <artifact-filename> <expected: pass|fail>
+# Hand-labeled once by a human; never touched by the judge under test.
+pass-1.md pass
+pass-2.md pass
+fail-1.md fail

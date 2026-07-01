@@ -31,6 +31,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import (  # noqa: E402
+    FRAMER_KEY_ENV,
     TinyYamlError,
     as_dict,
     as_list,
@@ -41,6 +42,7 @@ from _common import (  # noqa: E402
     is_sealed,
     load_config,
     normalize_hash,
+    resolve_framer_key,
 )
 
 DOD_FIELDS = ("contract_ref", "contract_hash", "accepted_plan_ref", "artifacts",
@@ -91,8 +93,10 @@ def run_check(external_check: Any, workdir: Path, repeat: int) -> tuple[bool, di
     return all(e == 0 for e in exits), {"cmd": cmd, "exits": exits}
 
 
-def verify(bundle_path: Path, workdir: Path | None, repeat: int) -> tuple[bool, dict[str, Any]]:
+def verify(bundle_path: Path, workdir: Path | None, repeat: int,
+          key: bytes | None = None) -> tuple[bool, dict[str, Any]]:
     findings: list[str] = []
+    advisories: list[str] = []  # non-blocking notes; never affect GREEN/RED
     checks: list[dict[str, Any]] = []
     bundle_path = bundle_path.resolve()
     bdir = bundle_path.parent
@@ -156,11 +160,25 @@ def verify(bundle_path: Path, workdir: Path | None, repeat: int) -> tuple[bool, 
     if str(suite.get("provenance") or "").strip().lower() != "framer":
         findings.append("acceptance_suite.provenance != framer")
 
-    canonical = canonical_contract_hash(contract)
+    # sealed_dir-folding is coupled to `key` being set — the stronger mode is opt-in as a pair,
+    # never applied unconditionally: an existing contract sealed under the plain unkeyed
+    # algorithm (sealed_dir=None) must keep verifying identically when no key is configured.
+    canonical = canonical_contract_hash(
+        contract, key=key,
+        sealed_dir=contract_path.parent if key else None,
+        exclude=contract_path if key else None,
+    )
     if normalize_hash(contract.get("contract_hash")) != canonical:
-        findings.append("sealed contract_hash is not the canonical hash of the contract")
+        findings.append("sealed contract_hash is not the canonical hash of the contract "
+                        "(mismatch also fires if any file under the sealed/ directory was "
+                        "modified — the hash now covers oracle-script bytes, not just contract text)")
     if normalize_hash(bundle.get("contract_hash")) != canonical:
         findings.append("bundle.contract_hash does not match the sealed contract (goal drift)")
+    if key is None:
+        advisories.append(
+            "no framer key configured (--key-file / LOOPTIMAL_FRAMER_KEY) — using unkeyed "
+            "sha256; a maker who can write the sealed contract can also recompute this hash. "
+            "A keyed run is strongly recommended, especially for sensitivity: high missions.")
 
     def _oracle_sealed(external_check: Any) -> bool:
         # The check must invoke a SEALED, workdir-contained oracle script (resolved, so a
@@ -235,6 +253,7 @@ def verify(bundle_path: Path, workdir: Path | None, repeat: int) -> tuple[bool, 
         "contract_hash": canonical,
         "criteria": checks,
         "findings": findings,
+        "advisories": advisories,
         "repeat": repeat,
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
@@ -291,6 +310,35 @@ def run_selftest() -> int:
         if ok2:
             print("SELFTEST FAIL (tampered state still GREEN)")
             return 1
+
+        # --- keyed hash-pin: proves the fix, not just documents it. Restore the honest state,
+        # reseal with a demo HMAC key covering the sealed/ tree, then tamper an ORACLE SCRIPT
+        # while leaving contract_hash untouched. Before this change, canonical_contract_hash()
+        # never covered sealed/ file bytes, so this specific tamper would have gone undetected —
+        # the whole point of this selftest case is that it no longer does.
+        (run / "src" / "app.py").write_text("# fixed\nreturn 404\n", encoding="utf-8")
+        key = b"\x00" * 32  # fixed, non-secret demo key — selftest only, never use a real key here
+        contract["contract_hash"] = "sha256:" + canonical_contract_hash(
+            contract, key=key, sealed_dir=run / "sealed", exclude=run / "sealed" / "contract.json")
+        (run / "sealed" / "contract.json").write_text(json.dumps(contract), encoding="utf-8")
+        bundle["contract_hash"] = canonical_contract_hash(
+            contract, key=key, sealed_dir=run / "sealed", exclude=run / "sealed" / "contract.json")
+        bundle["artifacts"][0]["sha256"] = sha256_file(run / "src" / "app.py")
+        (run / "bundle.json").write_text(json.dumps(bundle), encoding="utf-8")
+        ok3, verdict3 = verify(run / "bundle.json", workdir=run, repeat=2, key=key)
+        if not ok3:
+            print("SELFTEST FAIL (honest keyed bundle went RED):", verdict3["findings"])
+            return 1
+
+        original_oracle = (run / "sealed" / "check.py").read_text(encoding="utf-8")
+        assert "'fixed' in p.read_text()" in original_oracle, "fixture check.py text changed — update this tamper"
+        (run / "sealed" / "check.py").write_text(
+            original_oracle.replace("'fixed' in p.read_text()", "True"), encoding="utf-8")
+        ok4, verdict4 = verify(run / "bundle.json", workdir=run, repeat=2, key=key)
+        if ok4:
+            print("SELFTEST FAIL (tampered sealed/ oracle script still GREEN under the hash-pin):",
+                 verdict4)
+            return 1
     print("SELFTEST GREEN")
     return 0
 
@@ -301,15 +349,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--workdir", help="live target-repo root the checks run against (default: bundle dir)")
     ap.add_argument("--repeat", type=int, default=3, help="re-run each check N times for quorum (default 3)")
     ap.add_argument("--out", help="write the verdict JSON here (must be outside the bundle dir)")
+    ap.add_argument("--key-file", help="path to a hex-encoded framer HMAC key (checker-side "
+                    f"only; alternative: the {FRAMER_KEY_ENV} env var). Omit to use the "
+                    "original unkeyed sha256 (backward compatible, weaker).")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
         return run_selftest()
     if not args.bundle:
         ap.error("--bundle is required (or use --selftest)")
+    key = resolve_framer_key(args.key_file)
     ok, verdict = verify(Path(args.bundle),
                          Path(args.workdir) if args.workdir else None,
-                         args.repeat)
+                         args.repeat, key=key)
     blob = json.dumps(verdict, indent=2)
     if args.out:
         outp = Path(args.out).resolve()

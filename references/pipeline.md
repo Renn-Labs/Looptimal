@@ -285,7 +285,13 @@ Present: objective, `contract_hash`, archetype, irreversibles list, open externa
 
 ### Inputs
 - Approved `go-decision.json`
-- `task-graph.yaml`, `execute-scope.yaml`, sealed suite (read-only)
+- `task-graph.yaml`, `execute-scope.yaml`, sealed suite (read-only) — **the maker-facing view, not
+  the raw sealed contract**. Any criterion marked `visibility: checker-only` is assembled into
+  maker context via `_common.py::maker_safe_view()`, which redacts it down to `id`/`category`
+  only — never `oracle`/`external_check`/`green_means` text. Stage 6 always re-runs the full,
+  unredacted contract regardless; this only controls what the maker gets to see beforehand. A
+  maker that can read its own gate tends to aim at the gate, not the fix — see
+  `references/oracle-library.md`'s holdout guidance and `SECURITY.md`.
 - Binding `dispatch.maker`, `dispatch.checker` profiles
 - Loop runner (`run-this-loop.sh`) when archetype includes iteration
 

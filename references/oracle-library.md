@@ -351,6 +351,70 @@ Failure rule:
   - changed branches are covered by behaviorally relevant assertions
   - exclusions are justified and accepted
 
+### 14. Cross-Provider Judge Quorum
+
+- `id`: `cross-provider-judge-quorum`
+- `capability`: subjective quality assessment — written artifacts, design docs, research briefs, anything with no deterministic pass/fail test
+- `kind`: judge-panel oracle
+- `sealed_inputs`:
+  - the rubric, frozen before Execute (rubric_sha)
+  - the judge roster (N independent judges) and their provider assignments, frozen before Execute
+  - quorum_k (how many of N must agree) and the per-judge score threshold
+  - the artifact under review (artifact_sha)
+- `external_check`:
+  - dispatch each judge independently against the frozen rubric and artifact — no judge may read another judge's verdict
+  - each judge returns a structured `{score, reason}` verdict, never a bare number
+  - tally how many judges meet the threshold; compare against quorum_k
+  - log every verdict (score, reason, provider, rubric_sha, artifact_sha) for post-hoc inspection
+- `asserts`:
+  - the artifact was scored by genuinely independent judges, not one judge asked N times
+  - no judge shares a provider with the maker that produced the artifact
+  - the quorum result is reproducible from the logged verdicts, not just a final number
+- `green_means`:
+  - at least quorum_k of N judges scored at or above threshold
+  - every verdict is logged with a reason, not just a score
+  - the sealed judge roster contains no provider matching the maker's provider
+
+This oracle is the sealed, outcome-layer binding for the mechanism already proven end-to-end at
+the loop-spec layer — see `templates/verifier-library.yaml`'s `critic-panel` recipe and
+`examples/critic-panel/` for the worked implementation (fan-out, `{score, reason}` parsing,
+quorum tally, `critics.jsonl` provenance log). Sealing it as an outcome criterion means framing
+the same quorum script under the mission's `sealed/` directory so Stage 6 can invoke it as an
+`external_check` — no change to `verify-outcome.py` is required: `_oracle_sealed()` already
+accepts any sealed script that exits 0/1, regardless of what it does internally. Before trusting
+a judge in a sealed criterion, run it through the `judge-calibration-check` recipe first (see
+`examples/critic-panel/calibration/`) — a judge that fails calibration shouldn't be sealed at all.
+
+### 15. Sealed Tool-Trajectory Match
+
+- `id`: `sealed-tool-trajectory-match`
+- `capability`: process integrity for Execute-stage agents — did the maker stay inside its allowed capability surface while producing the outcome
+- `kind`: deterministic trajectory oracle
+- `sealed_inputs`:
+  - an allow-list and/or deny-list of tools the Execute-stage agent may invoke for this mission
+  - an ordering constraint, when order matters (e.g. "must read the policy before authorizing an action") — strict, unordered, or subset matching
+  - the tool-call transcript format this harness emits (transcripts differ across Claude Code, OpenCode, Hermes, etc. — normalize per-profile before this check runs)
+- `external_check`:
+  - parse the Execute-stage agent's tool-call transcript into an ordered list of (tool, args-summary) events
+  - diff it against the sealed allow/deny/order spec
+  - flag any forbidden tool call, or any required-order violation
+- `asserts`:
+  - the maker did not use a forbidden capability (e.g. an unrestricted write tool) to fabricate its own passing state
+  - the maker's process, not just its final output, is consistent with the mission's declared scope
+- `green_means`:
+  - every tool call in the transcript is on the allow-list (or absent from the deny-list)
+  - order constraints, if declared, are satisfied
+  - no gaps in the transcript that would hide an out-of-band action
+
+Unlike the other 14 patterns, this one verifies *process*, not *output* — a maker that produced a
+correct-looking final state via a forbidden path (e.g. writing directly to a file the oracle
+scripts read, instead of going through the real code path) is exactly the failure mode this
+closes. Deliberately scoped: this repo ships the pattern and one small, generic reference
+implementation (`templates/tool_trajectory_check.py`, stdlib-only, works against a normalized
+JSON-lines transcript) — not per-harness transcript adapters for every supported harness. A
+framer adapts the normalization step to their own harness's actual transcript format; the
+matching logic itself (allow/deny/order) does not need to change per harness.
+
 Important rejection rule:
 
 Raw coverage percentage is rejected. A claim such as "85% coverage" is not an oracle result unless it is bound to changed branches, mutation targets, or another behaviorally relevant sealed target set.

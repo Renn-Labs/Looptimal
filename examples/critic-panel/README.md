@@ -17,11 +17,14 @@ only when at least 2 of the 3 score >= 80.
 
 ## Judge identity and reproducibility
 
-`verify.sh` emits one JSON line per critic to `critics.jsonl`:
+`verify.sh` emits one JSON line per critic to `critics.jsonl`. Each critic-N.sh prints a
+`{"score": N, "reason": "..."}` verdict on stdout (never a bare integer) — the `reason` is what
+makes a boundary case (79 vs. 80) debuggable instead of just a number you have to trust:
 
 ```
-{"ts":"…","critic":"critic-1","provider":"codex","score":90,"threshold":80,
- "pass":true,"rubric_sha":"…","artifact_sha":"…","n":3,"quorum_k":2}
+{"ts":"…","critic":"critic-1","provider":"codex","score":90,"reason":"Clear, complete, accurate,
+ and concise against every rubric dimension.","threshold":80,"pass":true,"rubric_sha":"…",
+ "artifact_sha":"…","n":3,"quorum_k":2}
 ```
 
 `rubric_sha` and `artifact_sha` are SHA-256 hashes of the committed rubric and

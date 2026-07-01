@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # critic-2.sh — deterministic stub critic (cross-provider: grok).
 # Real use: swap the echo for a live dispatch, e.g.:
-#   score=$(grok "Score artifact.md against rubric.md 0-100. Output integer only.")
+#   grok 'Score artifact.md against rubric.md 0-100. Output JSON only: {"score": N, "reason": "..."}'
 # PROVIDER=grok
 set -euo pipefail
 
@@ -18,5 +18,5 @@ done
 [ -f "$RUBRIC" ]   || { echo "critic-2: rubric not found: $RUBRIC" >&2; exit 1; }
 [ -f "$ARTIFACT" ] || { echo "critic-2: artifact not found: $ARTIFACT" >&2; exit 1; }
 
-# Deterministic stub score — replace with live LLM dispatch for real judging.
-echo 85
+# Deterministic stub verdict — replace with live LLM dispatch for real judging.
+echo '{"score": 85, "reason": "Strong on clarity and accuracy; a touch verbose in the middle section."}'

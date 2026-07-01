@@ -31,8 +31,21 @@ acceptance_suite:
   sealed_path: acceptance/sealed/contract-v1.sha256
   criteria:
     - id: crit-main-pass-rate
+      category: ci-health  # OPTIONAL — a short label; still shown to the maker when visibility: checker-only
       asserts: outcome
       oracle: oracle-main-pass-rate-7d
+      # OPTIONAL, default maker-visible. checker-only means Stage-5 Execute context-assembly
+      # shows the maker only this criterion's id/category — never oracle/external_check/
+      # green_means text. Stage 6 (verify-outcome.py) always re-runs EVERY criterion regardless
+      # of visibility; this only controls what the maker gets to see beforehand. See
+      # references/pipeline.md's Stage 5 note and SECURITY.md for why a holdout criterion
+      # helps: a maker that can read its own gate tends to find the gate, not the fix.
+      visibility: maker-visible  # maker-visible | checker-only
+      # OPTIONAL, defaults to hard when unset — most contracts never need to set this. hard =
+      # deterministic/re-runnable (a repro/build/hash re-check); soft = a judgment call (a rubric
+      # or human vote) that can drift between runs. looptimal-lint.py advises (never blocks) when
+      # EVERY criterion in a suite is explicitly gate_type: soft — see templates/verifier-library.yaml.
+      gate_type: hard  # hard | soft
       external_check: >
         Query CI API for main branch test results over rolling 7 days on fresh runners;
         compute pass rate for paths tagged product-critical; independent of loop artifacts.

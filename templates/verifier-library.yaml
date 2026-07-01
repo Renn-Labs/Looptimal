@@ -1,10 +1,19 @@
 # verifier-library.yaml — copy-paste recipes for verify.sh
 # Each snippet is an EXTERNAL gate: exit 0 = GREEN, non-zero = RED.
 # Paste into loops/<slug>/verify.sh; never eval a command string from loop-spec.yaml.
+#
+# gate_type: hard means the pass/fail signal is deterministic and re-runnable (a test/build/
+# repro/hash re-check gives the same verdict every time on the same state). gate_type: soft means
+# it's a judgment call — an LLM/human scoring against a rubric, which can drift between runs even
+# on identical input. Neither is "better" — a rubric is the right tool for subjective quality —
+# but a suite made ENTIRELY of soft gates has no deterministic floor at all. See
+# scripts/looptimal-lint.py's soft-only-suite advisory and templates/contract.yaml's optional
+# criteria[].gate_type field (unset defaults to hard — most contracts never need to set this).
 
 recipes:
   - id: test-suite
     kind: test
+    gate_type: hard
     use_when: Spec-Driven or any loop whose done-state is "the derived test suite passes."
     snippet: |
       set -euo pipefail
@@ -16,6 +25,7 @@ recipes:
 
   - id: lint-clean
     kind: lint
+    gate_type: hard
     use_when: The goal is "code meets style/static-analysis rules" with no behavioral test gate yet.
     snippet: |
       set -euo pipefail
@@ -27,6 +37,7 @@ recipes:
 
   - id: build
     kind: build
+    gate_type: hard
     use_when: The goal is "artifact compiles/packages" and a successful build is the objective external signal.
     snippet: |
       set -euo pipefail
@@ -38,6 +49,7 @@ recipes:
 
   - id: repro-test
     kind: repro
+    gate_type: hard
     use_when: MORTY pattern — a specific bug must stop reproducing and the broader suite must not regress.
     snippet: |
       set -euo pipefail
@@ -51,6 +63,7 @@ recipes:
 
   - id: benchmark-threshold
     kind: benchmark
+    gate_type: hard
     use_when: Performance pattern — a metric must meet a numeric target AND correctness must hold.
     snippet: |
       set -euo pipefail
@@ -69,6 +82,7 @@ recipes:
 
   - id: llm-rubric-judge
     kind: rubric
+    gate_type: soft
     use_when: Output quality must be scored against a written rubric and no deterministic test exists.
     snippet: |
       set -euo pipefail
@@ -88,6 +102,7 @@ recipes:
 
   - id: human-vote
     kind: human
+    gate_type: soft  # authoritative (a human IS the verifier of last resort) but not re-runnable/deterministic
     use_when: No machine gate can encode the done-state — a named human is the verifier of LAST RESORT (judgment-heavy work with no automatable check). For routine pause-at-an-irreversible-step work, use the `checkpoint` autonomy mode plus `human_checkpoints` instead — that is a stop-shape, not a verifier.
     snippet: |
       set -euo pipefail
@@ -106,24 +121,137 @@ recipes:
 
   - id: critic-panel
     kind: rubric
+    gate_type: soft
     use_when: Output quality must be scored by N independent judge scripts with a k-of-N quorum. Strongest for eval, orchestration, or subjective quality goals where a single judge is insufficient. Generalizes llm-rubric-judge (n=1, quorum_k=1 == single-judge case).
     snippet: |
       set -euo pipefail
       # Copy into loops/<slug>/verify.sh — NEVER eval a command string from loop-spec.yaml.
-      # Adapt N, QUORUM_K, THRESHOLD, RUBRIC, ARTIFACT to your loop.
+      # Adapt N, QUORUM_K, THRESHOLD, RUBRIC, ARTIFACT to your loop. Each critic-N.sh prints a
+      # JSON verdict on stdout — {"score": N, "reason": "..."} — never a bare integer; the
+      # reason is what makes a boundary case debuggable. See examples/critic-panel/ for the
+      # full worked version this recipe is derived from.
       RUBRIC="rubric.md"; ARTIFACT="artifact.md"
       N=3; QUORUM_K=2; THRESHOLD=80
       sha() { (sha256sum "$1" 2>/dev/null || shasum -a 256 "$1") | awk '{print $1}'; }
       rsha=$(sha "$RUBRIC"); asha=$(sha "$ARTIFACT"); pass=0
-      while IFS= read -r i; do
-        score=$(bash "./critic-$i.sh" --rubric "$RUBRIC" --artifact "$ARTIFACT")
-        ok=false; [ "${score:-0}" -ge "$THRESHOLD" ] && { ok=true; pass=$((pass+1)); }
-        provider=$(grep -m1 -oE 'PROVIDER=[A-Za-z0-9_-]+' "./critic-$i.sh" | cut -d= -f2 || true)
-        printf '{"ts":"%s","critic":"critic-%s","provider":"%s","score":%s,"threshold":%s,"pass":%s,"rubric_sha":"%s","artifact_sha":"%s","n":%s,"quorum_k":%s}\n' \
-          "$(date -u +%FT%TZ)" "$i" "${provider:-unknown}" "${score:-0}" \
-          "$THRESHOLD" "$ok" "$rsha" "$asha" "$N" "$QUORUM_K" >> critics.jsonl
-      done < <(seq 1 "$N")
+      for i in $(seq 1 "$N"); do
+        script="./critic-$i.sh"
+        raw=$(bash "$script" --rubric "$RUBRIC" --artifact "$ARTIFACT") || raw='{"score": 0, "reason": "critic script exited non-zero"}'
+        provider=$(grep -m1 -oE 'PROVIDER=[A-Za-z0-9_-]+' "$script" | cut -d= -f2 || true)
+        # Parse via json.loads (never eval) and re-serialize via json.dumps so a reason
+        # containing quotes/newlines can't corrupt the jsonl line — pass data through env vars,
+        # never string-interpolate untrusted content into the python source itself.
+        ok=$(RAW="$raw" TS="$(date -u +%FT%TZ)" CRITIC="critic-$i" PROVIDER="${provider:-unknown}" \
+             THRESHOLD="$THRESHOLD" RSHA="$rsha" ASHA="$asha" NN="$N" QK="$QUORUM_K" python3 -c '
+        import json, os
+        try:
+            v = json.loads(os.environ["RAW"]); score = int(v.get("score", 0)); reason = str(v.get("reason", ""))
+        except (json.JSONDecodeError, ValueError, TypeError, KeyError):
+            score, reason = 0, "critic verdict was not valid JSON {score, reason}"
+        threshold = int(os.environ["THRESHOLD"]); ok = score >= threshold
+        line = {"ts": os.environ["TS"], "critic": os.environ["CRITIC"], "provider": os.environ["PROVIDER"],
+                "score": score, "reason": reason, "threshold": threshold, "pass": ok,
+                "rubric_sha": os.environ["RSHA"], "artifact_sha": os.environ["ASHA"],
+                "n": int(os.environ["NN"]), "quorum_k": int(os.environ["QK"])}
+        open("critics.jsonl", "a").write(json.dumps(line) + "\n")
+        print("1" if ok else "0")
+        ')
+        [ "$ok" = "1" ] && pass=$((pass+1))
+      done
       [ "$pass" -ge "$QUORUM_K" ] || { echo "critic-panel: quorum FAIL ($pass/$N >= $QUORUM_K needed)" >&2; exit 1; }
       echo "critic-panel: quorum PASS ($pass/$N)"; exit 0
-    green_means: At least quorum_k of N independent critics scored the artifact at or above threshold. Each critic's verdict is logged to critics.jsonl with rubric_sha, artifact_sha, provider, and score — inspectable after the fact.
+    green_means: At least quorum_k of N independent critics scored the artifact at or above threshold. Each critic's verdict ({score, reason}) is logged to critics.jsonl with rubric_sha, artifact_sha, and provider — inspectable after the fact, including WHY a boundary case scored the way it did.
     caveats: Judge ≠ maker — each critic-N.sh MUST be a separate script with distinct provider dispatch; it may not exec or source maker.sh. Strongest when critics target cross-provider judges (see provider.available / dispatch.checker from the dispatch layer); a single-provider panel is weaker but valid when consciously acknowledged. This GENERALIZES llm-rubric-judge — n=1, quorum_k=1 is the single-judge case; prefer llm-rubric-judge when one judge suffices.
+
+  - id: judge-calibration-check
+    kind: rubric
+    gate_type: hard  # the calibration CHECK itself is deterministic/re-runnable; it's what validates a soft judge before you trust it elsewhere
+    use_when: Before wiring an llm-rubric-judge or critic-panel judge into a real loop — confirms the judge isn't obviously broken (always scores the same, ignores the rubric) against a small, human-labeled golden set. Run once at setup, not every iteration.
+    snippet: |
+      set -euo pipefail
+      # Copy into a one-time setup check (NOT verify.sh's iteration path) — this validates the
+      # judge, it doesn't gate the loop's own acceptance criterion. See
+      # examples/critic-panel/calibration/ for the full worked version.
+      JUDGE="./your-critic-or-judge.sh"     # the judge script you're about to trust
+      GOLDEN_DIR="calibration/golden"       # 3-5 (artifact, expected pass|fail) pairs you hand-label once
+      MANIFEST="$GOLDEN_DIR/expected.txt"   # "<filename> pass|fail" per line
+      THRESHOLD=80
+      MIN_AGREEMENT=1.0                     # 1.0 = every golden example must agree, for a set this small
+      total=0; correct=0
+      while read -r filename expected; do
+        [ -z "$filename" ] && continue
+        case "$filename" in \#*) continue ;; esac
+        raw=$(bash "$JUDGE" "$GOLDEN_DIR/$filename") || raw='{"score": 0, "reason": "judge exited non-zero"}'
+        actual=$(RAW="$raw" THRESHOLD="$THRESHOLD" python3 -c '
+      import json, os
+      try:
+          v = json.loads(os.environ["RAW"]); score = int(v.get("score", 0))
+      except (json.JSONDecodeError, ValueError, TypeError, KeyError):
+          score = 0
+      print("pass" if score >= int(os.environ["THRESHOLD"]) else "fail")
+      ')
+        total=$((total+1)); [ "$actual" = "$expected" ] && correct=$((correct+1))
+      done < "$MANIFEST"
+      agreement=$(python3 -c "print($correct / $total)" 2>/dev/null || echo 0)
+      python3 -c "exit(0 if $agreement >= $MIN_AGREEMENT else 1)" \
+        && echo "judge-calibration-check: GREEN ($correct/$total agree)" \
+        || { echo "judge-calibration-check: FAIL ($correct/$total agree, need >= $MIN_AGREEMENT)" >&2; exit 1; }
+    green_means: The judge's pass/fail verdict agrees with every (or at least MIN_AGREEMENT of) the hand-labeled golden examples.
+    caveats: This catches a broken or lazy judge (always scores 90, ignores the rubric) — it is NOT statistically rigorous calibration and does not measure fine-grained scoring accuracy. A 3-5 example golden set is a directional smoke test; treat a GREEN as "not obviously broken," not "provably accurate." Run this once when you set up a new judge, not on every loop iteration — it validates the judge, it isn't itself the loop's acceptance gate.
+
+  - id: type-check
+    kind: lint
+    gate_type: hard
+    use_when: The goal includes "the codebase type-checks clean" — a static gate distinct from style/lint rules, catching a class of bug tests may not cover.
+    snippet: |
+      set -euo pipefail
+      # Adapt to your stack: mypy ., pyright, tsc --noEmit, cargo check, go vet ./..., etc.
+      mypy . --strict
+      echo "verify: type-check GREEN"
+    green_means: The type checker reports zero errors under the project's configured strictness.
+    caveats: Type-checking proves internal consistency, not runtime correctness — pair with a test gate when behavior matters, same caveat as lint-clean.
+
+  - id: coverage-threshold
+    kind: coverage
+    gate_type: hard
+    use_when: The goal is "test coverage meets a floor" — distinct from benchmark-threshold (a performance target) and from oracle-library.md's mutation-or-changed-branch-coverage pattern (which this recipe's caveat explicitly points to for anything more rigorous than a raw floor).
+    snippet: |
+      set -euo pipefail
+      # Adapt to your stack (coverage.py, nyc, go test -cover, cargo-tarpaulin, etc.).
+      FLOOR=80
+      pct=$(pytest --cov=. --cov-report=term-missing -q | tee /dev/stderr | grep -oE 'TOTAL.*[0-9]+%' | grep -oE '[0-9]+' | tail -1)
+      if [ "${pct:-0}" -lt "$FLOOR" ]; then
+        echo "verify: coverage-threshold FAIL ${pct}% < floor ${FLOOR}%" >&2
+        exit 1
+      fi
+      echo "verify: coverage-threshold GREEN (${pct}% >= ${FLOOR}%)"
+    green_means: Line (or branch, if your tool reports it) coverage is at or above the declared floor.
+    caveats: A raw percentage floor is a weak signal on its own — references/oracle-library.md's "Important rejection rule" explicitly rejects a bare "85% coverage" claim as an outcome oracle unless it's bound to changed branches or mutation targets. Use this recipe for a coarse regression guard (don't let coverage silently drop), not as your primary correctness gate — pair with test-suite or the mutation-or-changed-branch-coverage oracle for anything load-bearing.
+
+  - id: container-build
+    kind: build
+    gate_type: hard
+    use_when: The goal is "the container image builds" — the objective external signal for a containerized deliverable, distinct from the source-level build recipe.
+    snippet: |
+      set -euo pipefail
+      IMAGE_TAG="looptimal-verify:$(date +%s)"
+      docker build -t "$IMAGE_TAG" .
+      docker image rm "$IMAGE_TAG" >/dev/null 2>&1 || true
+      echo "verify: container-build GREEN"
+    green_means: docker build exits 0 against the current Dockerfile/context — the image is constructible from a clean context.
+    caveats: A build succeeding says nothing about the running container's behavior — pair with a smoke test (start the container, hit a health endpoint) when runtime correctness matters, not just constructibility.
+
+  - id: schema-validate
+    kind: schema
+    gate_type: hard
+    use_when: The goal is "a JSON/YAML instance conforms to a schema" — config files, API payloads, or any structured artifact with a formal contract.
+    snippet: |
+      set -euo pipefail
+      # Adapt to your schema tool (python3 -m jsonschema, ajv, yajsv, etc.). Shown here with the
+      # jsonschema CLI; swap for your stack's equivalent.
+      SCHEMA="schema.json"
+      INSTANCE="instance.json"
+      python3 -m jsonschema -i "$INSTANCE" "$SCHEMA"
+      echo "verify: schema-validate GREEN"
+    green_means: The instance document validates cleanly against the declared schema — no missing required fields, no type mismatches, no unexpected properties (if additionalProperties is constrained).
+    caveats: Schema validation proves structural conformance, not semantic correctness — a document can be schema-valid and still wrong (e.g. a valid-shaped config pointing at the wrong environment). Pair with a behavioral check when the goal is "the config actually works," not just "the config parses."

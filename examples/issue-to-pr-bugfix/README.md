@@ -1,5 +1,14 @@
 # Looptimal Example: Issue 123 to PR Bugfix
 
+This is the one example that round-trips the full pipeline against the outcome-layer's sealed
+contract (`contract_hash`) — the other 7 examples are loop-spec-layer only. `contract.yaml`'s hash
+is sealed with the HMAC-keyed hash-pin (`DEMO-KEY-NOT-SECRET.hex` in this directory) rather than
+the older unkeyed sha256, so it also demonstrates that mode end-to-end — see the root
+[`README.md`](../../README.md#verify-it-yourself) for the runnable commands, and
+[`SECURITY.md`](../../SECURITY.md) for what the keyed mode actually closes. **The key in this
+directory is a fixed, all-zero demo value, loudly non-secret by construction — never reuse it. A
+real mission generates a fresh key via `secrets.token_bytes(32)` and never commits it to a repo.**
+
 ## Stage 0: Contract
 
 The run starts with `contract.yaml`.

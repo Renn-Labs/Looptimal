@@ -1,7 +1,7 @@
 {
   "contract_ref": "sealed/contract.yaml",
   "accepted_plan_ref": "mission.yaml",
-  "contract_hash": "1817bdad35db97ddd478e7c0a48971d5151e81ff8e091ab303aa7f665ca79631",
+  "contract_hash": "f51f8b540b80c0afe446d5b25d28f9886ce3220e2813b71bc9cc1e1b16ade6fe",
   "artifacts": [
     {
       "path": "src/api/project_lookup.py",

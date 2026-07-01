@@ -2,6 +2,22 @@
 
 Looptimal ships reusable verifier recipes in [`templates/verifier-library.yaml`](../templates/verifier-library.yaml). Each recipe is a bash snippet to paste into `loops/<slug>/verify.sh`. The contract is binary: **exit 0 = GREEN**, **non-zero = RED**.
 
+## Recipe catalog, by kind
+
+Each recipe carries a `kind` (what category of check it is) and a `gate_type` (`hard` = deterministic/re-runnable, `soft` = a judgment call — see `templates/verifier-library.yaml`'s header comment for what that distinction is for).
+
+| Kind | Recipes | gate_type |
+|-|-|-|
+| `test` | `test-suite` | hard |
+| `lint` | `lint-clean`, `type-check` | hard |
+| `build` | `build`, `container-build` | hard |
+| `repro` | `repro-test` | hard |
+| `benchmark` | `benchmark-threshold` | hard |
+| `coverage` | `coverage-threshold` | hard — a raw floor; see its own caveat and `oracle-library.md`'s mutation-or-changed-branch-coverage pattern for anything more rigorous |
+| `schema` | `schema-validate` | hard — structural conformance only, not semantic correctness |
+| `rubric` | `llm-rubric-judge`, `critic-panel`, `judge-calibration-check` | soft (the calibration check itself is `hard` — it's the judge being calibrated that's soft) |
+| `human` | `human-vote` | soft — see "Human in the loop" below; this is a *verifier of last resort*, not the general case |
+
 ## How the wizard picks a recipe
 
 | Pattern | Default recipe | Why |
