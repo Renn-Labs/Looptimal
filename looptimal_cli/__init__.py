@@ -63,6 +63,10 @@ def persona_promote() -> None:
     _run_no_arg("looptimal-persona-promote")
 
 
+def frame_ingest() -> None:
+    _run_no_arg("looptimal-frame-ingest")
+
+
 # --- loopprint-* (loop-design/wizard layer): main(argv) takes sys.argv ---
 def loopprint_detect() -> None:
     _run_with_argv("loopprint-detect")

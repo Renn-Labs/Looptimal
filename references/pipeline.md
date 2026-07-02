@@ -53,6 +53,19 @@ Lint entrypoints (resolve from binding or skill `scripts/`):
    - No unfilled placeholders; no self-referential meta-loop acceptance ("Looptimal says GREEN")
    - Evidence-bundle schema stub present for Stage 6
 
+### Optional: spec-kit / Kiro ingestion
+
+If the target repo already has GitHub spec-kit (`.specify/memory/constitution.md`,
+`specs/<feature>/spec.md`) or AWS Kiro (`.kiro/steering/*.md`, `.kiro/specs/*/requirements.md`,
+EARS notation) artifacts, `scripts/looptimal-frame-ingest.py [directory] [--out PATH] [--json]`
+scans for them and prints a CANDIDATE objective/acceptance-criteria summary — reusing text a
+team already wrote instead of re-typing it from scratch. It is a pure content-ingestion helper:
+it never parses the sealed suite shape, never writes `contract.yaml`/`mission.yaml`/
+`acceptance-suite.yaml` itself (those filenames are refused as `--out` targets), and never seals
+or invokes Frame on its own. A human still has to read the candidates and manually decompose
+them into real, oracle-bound criteria under step 3 above — nothing it prints is ever
+auto-accepted.
+
 ### Outputs / artifacts
 | Artifact | Purpose |
 |----------|---------|
