@@ -1,5 +1,12 @@
 # SkillSpector baseline — findings listed here are suppressed on future scans.
 # Edit 'reason' fields and add glob 'rules' as needed. See docs/SUPPRESSION.md.
+#
+# KNOWN CHURN: this file needs a manual re-diff (skillspector baseline scripts --no-llm --output
+# <tmp> ; diff hashes ; add only the new ones with a specific reason) whenever new code lands
+# near already-reviewed security-sensitive functions in scripts/verify-outcome.py, because the
+# fingerprint hash is content/location-sensitive and shifts as surrounding lines change. Run this
+# LOCALLY before pushing any change that touches scripts/*.py, not after CI fails — see the
+# pre-push checklist this repeats into (Erik: track wiring this into an actual pre-push hook).
 version: 1
 rules: []
 fingerprints:
@@ -151,3 +158,50 @@ fingerprints:
     correct rather than merely present. This is verification, not poisoning; no dict
     mutation crosses a trust boundary. Independently adversarially reviewed twice on
     2026-07-02 (implementation + confirmation pass) as part of the receipt feature.'
+- hash: sha256:6ff1286963dc5e66
+  rule_id: AST4
+  file: verify-outcome.py
+  reason: 'Reviewed by hand 2026-07-02, re-baselined when --check-receipt landed (line
+    numbers shifted, not new code): run_check()''s subprocess.run(cmd, ..., env=safe_env())
+    -- the outer verifier deliberately re-executing a maker''s oracle command against live
+    state is the entire, load-bearing point of Stage 6. A scanner flagging "dangerous code
+    execution" here is flagging the feature, not a bug. safe_env() is the actual control
+    (strips LD_*/PYTHONPATH/proxy/framer-key), independently reviewed 2x today.'
+- hash: sha256:3f5cb849dd0d4b68
+  rule_id: RP1
+  file: looptimal-docs-check.py
+  reason: 'Reviewed by hand 2026-07-02: false positive on a MODULE DOCSTRING (line 11)
+    describing, in prose, the v2.0.0 tag/pyproject.toml incident this script''s CI gate
+    exists to prevent from recurring. No code executes at that line; the scanner
+    pattern-matched documentation text, not a supply-chain rug-pull.'
+- hash: sha256:411ea7601906a6e2
+  rule_id: E2
+  file: verify-outcome.py
+  reason: 'Reviewed by hand 2026-07-02, re-baselined when --check-receipt landed (line
+    numbers shifted, not new code): this is safe_env()''s own framer-key-stripping logic
+    -- the fix for the original BLOCK finding, not a new exfiltration vector. Same as the
+    earlier E2 baseline entries for this function.'
+- hash: sha256:2cb7052e2eb25cc4
+  rule_id: E2
+  file: verify-outcome.py
+  reason: 'Reviewed by hand 2026-07-02, re-baselined when --check-receipt landed (line
+    numbers shifted, not new code): inside run_selftest()''s key-leak-closure test -- the
+    oracle-script string literal that deliberately attempts to read LOOPTIMAL_FRAMER_KEY,
+    to prove safe_env() stops it. A negative test, not a real exfiltration attempt. Same
+    class as the first two E2 entries added 2026-07-01.'
+- hash: sha256:f3e38497e2625ade
+  rule_id: E2
+  file: verify-outcome.py
+  reason: 'Reviewed by hand 2026-07-02, re-baselined when --check-receipt landed (line
+    numbers shifted, not new code): the env-var save/restore around the same key-leak-closure
+    selftest (simulates the CI key-delivery mode, then restores whatever was there). Not
+    exfiltration; same class as the second E2 entry added 2026-07-01.'
+- hash: sha256:61615ad621357279
+  rule_id: MP2
+  file: verify-outcome.py
+  reason: 'Reviewed by hand 2026-07-02: run_selftest()''s --check-receipt case doing the
+    SAME independent HMAC signature recomputation as the earlier MP2 entry above, but for
+    the check_receipt() verification path rather than the emit_receipt() path -- two
+    distinct call sites, same verification-not-poisoning pattern. Both independently
+    adversarially reviewed 2026-07-02 (impl + confirmation pass for each of --receipt and
+    --check-receipt, 4 review passes total across both).'
