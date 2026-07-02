@@ -1,0 +1,34 @@
+# ILLUSTRATIVE example profile for Codex / OMX.
+#
+# NOT maintained against Codex/OMX releases. Copy this to ~/.loopprint/profile.yaml (or a project's
+# .loopprint/profile.yaml) and adjust the values to YOUR install. Codex/OMX installs Looptimal via a
+# real-copy bridge (cp -r ~/looptimal ~/.codex/skills/looptimal, re-copied after each update — see
+# ../references/troubleshooting.md, "Codex / OMX (or any harness that real-copies skills)") rather
+# than a symlink, so this profile only tunes how generated loops are wired, not how the skill itself
+# is discovered. See ../references/profiles.md.
+
+harness: codex
+
+# Codex/OMX conventionally keeps its own state under .omx/ (the same marker scripts/looptimal-detect.py
+# and scripts/loopprint-detect.py probe for). Mirror that shape for a loop's state + artifacts, parallel
+# to how the oh-my-claudecode profile uses .omc/loops/<slug>.
+state_dir: .omx/loops/<slug>
+
+# Codex/OMX does not ship a verifier-marker Stop hook by default (unlike e.g. oh-my-claudecode's
+# loop-verifier-gate). Leave "" unless your own OMX setup records a verdict somewhere, then point here.
+marker_path: ""
+
+verifier:
+  # Prefer a DIFFERENT-provider CLI reviewing the output over Codex reviewing itself — cross-provider
+  # is the strongest form of maker != checker this project supports (see ../examples/critic-panel/ and
+  # ../templates/safety-checklist.md). Fall back to a real command when no second provider is installed.
+  default: "an independent different-provider CLI reviewer (e.g. claude or grok) — or a test/build/lint/repro command"
+
+dispatch:
+  # loopprint-detect.py prints provider.available; if 2+ agent CLIs are on PATH, point checker at
+  # one that is NOT the maker's provider.
+  maker: "codex exec, or an OMX agent/session step"
+  checker: "a SEPARATE provider CLI in an independent session (e.g. claude -p or grok) — a same-provider Codex session run in isolation only if no other CLI is installed"
+
+runner: run-this-loop.sh
+banner: ""

@@ -1,0 +1,33 @@
+# ILLUSTRATIVE example profile for grok build (xAI's coding CLI).
+#
+# NOT maintained against grok build releases. Copy this to ~/.loopprint/profile.yaml (or a project's
+# .loopprint/profile.yaml) and adjust the values to YOUR install. grok build has no folder-skill
+# discovery of its own — Looptimal is wired in via a short pointer entry in your AGENTS.md catalog
+# (see ../references/troubleshooting.md, "Grok / any AGENTS.md-pointer harness"), so this profile
+# only tunes how generated loops are wired, not how the skill itself is discovered. See
+# ../references/profiles.md.
+
+harness: grok-build
+
+# grok build has no documented state convention of its own in this repo; keep the generic per-loop
+# default unless your setup nests it under something else.
+state_dir: loops/<slug>
+
+# grok build records no verifier verdict by default; if your AGENTS.md wrapper writes one somewhere,
+# point here.
+marker_path: ""
+
+verifier:
+  # Prefer a DIFFERENT-provider CLI reviewing the output over grok reviewing itself — cross-provider
+  # is the strongest form of maker != checker this project supports (see ../examples/critic-panel/ and
+  # ../templates/safety-checklist.md). Fall back to a real command when no second provider is installed.
+  default: "an independent different-provider CLI reviewer (e.g. codex or claude) — or a test/build/lint/repro command"
+
+dispatch:
+  # loopprint-detect.py prints provider.available; if 2+ agent CLIs are on PATH, point checker at
+  # one that is NOT the maker's provider.
+  maker: "a grok build session run from the AGENTS.md-pointed instructions"
+  checker: "a SEPARATE provider CLI in an independent session (e.g. codex exec or claude -p) — a same-provider grok session run in isolation only if no other CLI is installed"
+
+runner: run-this-loop.sh
+banner: ""
