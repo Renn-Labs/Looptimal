@@ -4,10 +4,15 @@
 
 <p align="center"><em>from objective to verified outcome</em></p>
 
+<!-- "Skill Audit" runs as the skill-audit job inside ci.yml (see that file), so it shares the
+     same workflow-level status endpoint as the "CI" badge above — GitHub has no per-job badge.
+     Green still means the SkillSpector scan specifically passed; a split into its own workflow
+     file would be needed for a fully independent badge. -->
 <p align="center">
   <a href="https://github.com/Renn-Labs/Looptimal/actions/workflows/ci.yml"><img src="https://github.com/Renn-Labs/Looptimal/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://github.com/Renn-Labs/Looptimal/stargazers"><img src="https://img.shields.io/github/stars/Renn-Labs/Looptimal" alt="GitHub stars"></a>
+  <a href="https://github.com/Renn-Labs/Looptimal/actions/workflows/ci.yml"><img src="https://github.com/Renn-Labs/Looptimal/actions/workflows/ci.yml/badge.svg" alt="Skill Audit"></a>
 </p>
 
 ---
@@ -161,6 +166,11 @@ K=examples/issue-to-pr-bugfix/DEMO-KEY-NOT-SECRET.hex
 python3 scripts/looptimal-lint.py examples/issue-to-pr-bugfix/mission.yaml --key-file "$K"
 python3 scripts/verify-outcome.py --bundle examples/issue-to-pr-bugfix/evidence-bundle.json \
   --workdir examples/issue-to-pr-bugfix --repeat 3 --key-file "$K"
+
+# Opt-in: on GREEN, also emit a public verification receipt (references/receipt.md). Keyed here,
+# so it is HMAC-signed; bare --receipt writes <workdir>/looptimal-receipt.json (never on RED):
+python3 scripts/verify-outcome.py --bundle examples/issue-to-pr-bugfix/evidence-bundle.json \
+  --workdir examples/issue-to-pr-bugfix --repeat 3 --key-file "$K" --receipt
 ```
 
 ## Security model (and its honest limit)

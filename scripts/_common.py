@@ -114,6 +114,26 @@ def resolve_framer_key(key_file: str | None) -> bytes | None:
         raise SystemExit(f"--key-file/{FRAMER_KEY_ENV} must be hex-encoded: {exc}")
 
 
+# The single canonical version source (the same file check-version-consistency.py guards).
+PLUGIN_MANIFEST = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
+
+
+def read_plugin_version(manifest: Path | None = None) -> str:
+    """Read the canonical Looptimal version from .claude-plugin/plugin.json's "version" field.
+
+    Factored here (2026-07-01 receipt design, Decision 5) so the receipt emitter and the release
+    version guard cannot drift on HOW the version is sourced — the read lives in exactly one place
+    rather than being re-derived per call site. Raises ValueError when the manifest has no usable
+    "version"; propagates OSError / json.JSONDecodeError when it cannot be read or parsed. Callers
+    that must not crash (a GREEN receipt emission) decide how to degrade."""
+    path = Path(manifest) if manifest is not None else PLUGIN_MANIFEST
+    data = json.loads(path.read_text(encoding="utf-8"))
+    version = data.get("version") if isinstance(data, dict) else None
+    if not version:
+        raise ValueError(f'no "version" in {path}')
+    return str(version).strip()
+
+
 class TinyYamlError(ValueError):
     pass
 

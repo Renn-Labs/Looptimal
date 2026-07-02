@@ -23,6 +23,7 @@ import hashlib
 import hmac
 import json
 import os
+import platform
 import subprocess
 import sys
 import tempfile
@@ -43,6 +44,7 @@ from _common import (  # noqa: E402
     is_sealed,
     load_config,
     normalize_hash,
+    read_plugin_version,
     resolve_framer_key,
 )
 
@@ -272,6 +274,88 @@ def verify(bundle_path: Path, workdir: Path | None, repeat: int,
     return (result == "GREEN"), verdict
 
 
+def emit_receipt(receipt_path: Path, verdict: dict[str, Any], bundle_path: Path,
+                 workdir: Path, *, key: bytes | None = None,
+                 include_objective: bool = False) -> None:
+    """Write a public verification receipt (references/receipt.md) for a GREEN live re-run.
+
+    ONLY ever called after verify() returned ok == True (Emission semantics #1: only on GREEN — a
+    receipt for a non-GREEN run must not exist). The load-bearing fields come from the checker's own
+    VERDICT, never from the maker's self-report: `contract_hash`, `criteria_passed`, and `repeat` are
+    copied out of `verdict`; `objective_hash` / the `*_ref` paths / `evidence_bundle_sha256` are
+    re-derived from disk, resolving the contract exactly as verify() did (bundle-relative
+    `contract_ref`). This re-derivation keeps verify() itself untouched — the hostile gate stays
+    pristine — and mirrors what an independent re-checker would do.
+
+    When a framer key is configured the receipt is keyed and HMAC-signed over its own canonical
+    payload (the whole receipt MINUS the `signature` field), reusing canonical_contract_hash's exact
+    json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=True) discipline so the two
+    serializations cannot drift. Unkeyed, the `signature` field is OMITTED entirely (absent, not
+    null) so it is naturally excluded from any future signed payload without special-casing — and
+    `contract_hash_keyed` is False, disambiguating the (identically shaped) contract_hash."""
+    bundle_path = bundle_path.resolve()
+    workdir = workdir.resolve()
+    bundle = as_dict(load_config(bundle_path))
+    contract_ref = str(bundle.get("contract_ref") or "").replace("\\", "/")
+    # Re-assert verify()'s own traversal guard (2026-07-02 confirmation review, finding L1)
+    # rather than relying on emit_receipt() only ever being called post-GREEN, when the same
+    # bundle already passed it once: emit_receipt re-reads a maker-influenced ref independently,
+    # and a future caller (e.g. a standalone re-check) could reach this code without verify()
+    # having validated it first. Defense-in-depth, not a live hole today.
+    if contract_ref.startswith("/") or os.path.isabs(contract_ref) or ".." in contract_ref.split("/"):
+        raise ValueError(f"contract_ref must be a relative, non-traversing path: {contract_ref!r}")
+    contract_path = (bundle_path.parent / contract_ref).resolve()
+    objective_text = str(as_dict(load_config(contract_path)).get("objective") or "")
+
+    try:
+        bundle_ref = os.path.relpath(bundle_path, workdir).replace("\\", "/")
+    except ValueError:  # e.g. different drive on Windows — fall back to the bare name
+        bundle_ref = bundle_path.name
+
+    server = os.environ.get("GITHUB_SERVER_URL")
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    run_id = os.environ.get("GITHUB_RUN_ID")
+    ci_run_url = (f"{server}/{repo}/actions/runs/{run_id}"
+                  if server and repo and run_id else None)
+
+    try:
+        looptimal_version = read_plugin_version()
+    except (OSError, ValueError, json.JSONDecodeError):
+        looptimal_version = "unknown"  # degrade rather than crash a GREEN emission
+
+    receipt: dict[str, Any] = {
+        "kind": "looptimal-receipt",
+        "schema_version": 1,
+        "objective_hash": "sha256:" + hashlib.sha256(objective_text.encode("utf-8")).hexdigest(),
+    }
+    if include_objective:  # opt-in; the receipt is public, so hash-only is the default (Decision 1)
+        receipt["objective"] = objective_text
+    receipt.update({
+        "contract_ref": contract_ref,
+        "contract_hash": verdict.get("contract_hash"),
+        "contract_hash_keyed": key is not None,
+        "evidence_bundle_ref": bundle_ref,
+        "evidence_bundle_sha256": sha256_file(bundle_path),
+        "verdict": "GREEN",
+        "criteria_passed": [str(c.get("criterion")) for c in as_list(verdict.get("criteria"))
+                            if c.get("passed")],
+        "repeat": verdict.get("repeat"),
+        "toolchain": {"looptimal": looptimal_version, "python": platform.python_version()},
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "ci_run_url": ci_run_url,
+    })
+    if key is not None:
+        payload = {k: v for k, v in receipt.items() if k != "signature"}
+        payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                                   ensure_ascii=True).encode("utf-8")
+        receipt["signature"] = {"alg": "HMAC-SHA256",
+                                "value": hmac.new(key, payload_bytes, hashlib.sha256).hexdigest()}
+
+    receipt_path = Path(receipt_path)
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
+    receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+
+
 def run_selftest() -> int:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
@@ -409,6 +493,80 @@ def run_selftest() -> int:
         if leaked:
             print("SELFTEST FAIL (framer key leaked into an oracle subprocess's environment)")
             return 1
+
+        # --- receipt emission (references/receipt.md). Proves the emitter's core anti-forgery
+        # claims mechanically: (a) a keyed GREEN --receipt writes a signed receipt whose signature
+        # we INDEPENDENTLY recompute from the receipt's own fields (present AND correct, not merely
+        # present); (b) an unkeyed GREEN --receipt writes an UNSIGNED receipt (signature absent, not
+        # null); (c) a RED verify writes NO receipt at all (the GREEN-only gate). The ok4 tamper
+        # left run/sealed/check.py broken, so restore it to the honest keyed state first.
+        (run / "sealed" / "check.py").write_text(original_oracle, encoding="utf-8")
+        ok5, verdict5 = verify(run / "bundle.json", workdir=run, repeat=2, key=key)
+        if not ok5:
+            print("SELFTEST FAIL (honest keyed bundle went RED before receipt emission):",
+                  verdict5["findings"])
+            return 1
+        keyed_receipt = run / "looptimal-receipt.json"
+        emit_receipt(keyed_receipt, verdict5, run / "bundle.json", run, key=key,
+                     include_objective=False)
+        if not keyed_receipt.is_file():
+            print("SELFTEST FAIL (keyed --receipt wrote no receipt file)")
+            return 1
+        receipt = json.loads(keyed_receipt.read_text(encoding="utf-8"))
+        expected_passed = [c["criterion"] for c in verdict5["criteria"] if c["passed"]]
+        if (receipt.get("kind") != "looptimal-receipt"
+                or receipt.get("contract_hash_keyed") is not True
+                or receipt.get("verdict") != "GREEN"
+                or receipt.get("criteria_passed") != expected_passed
+                or not isinstance(receipt.get("signature"), dict)
+                or not receipt["signature"].get("value")):
+            print("SELFTEST FAIL (keyed receipt malformed — kind/keyed/criteria/signature):", receipt)
+            return 1
+        # Independently recompute the HMAC over the receipt-minus-signature with the same key and
+        # the same canonicalization the emitter used; a match proves the signature is genuinely
+        # correct, not just present.
+        signed = {k: v for k, v in receipt.items() if k != "signature"}
+        recomputed = hmac.new(key, json.dumps(signed, sort_keys=True, separators=(",", ":"),
+                                              ensure_ascii=True).encode("utf-8"),
+                              hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(recomputed, receipt["signature"]["value"]):
+            print("SELFTEST FAIL (keyed receipt signature does not verify against its own fields)")
+            return 1
+
+        # (b) unkeyed GREEN: reseal run/ under the plain unkeyed sha256, emit, and confirm the
+        # signature field is ABSENT entirely (not null) and contract_hash_keyed is false.
+        contract["contract_hash"] = "sha256:" + canonical_contract_hash(contract)
+        (run / "sealed" / "contract.json").write_text(json.dumps(contract), encoding="utf-8")
+        bundle["contract_hash"] = canonical_contract_hash(contract)
+        bundle["artifacts"][0]["sha256"] = sha256_file(run / "src" / "app.py")
+        (run / "bundle.json").write_text(json.dumps(bundle), encoding="utf-8")
+        ok6, verdict6 = verify(run / "bundle.json", workdir=run, repeat=2)
+        if not ok6:
+            print("SELFTEST FAIL (honest unkeyed bundle went RED before receipt emission):",
+                  verdict6["findings"])
+            return 1
+        unkeyed_receipt = run / "looptimal-receipt-unkeyed.json"
+        emit_receipt(unkeyed_receipt, verdict6, run / "bundle.json", run, key=None,
+                     include_objective=False)
+        ur = json.loads(unkeyed_receipt.read_text(encoding="utf-8"))
+        if ur.get("contract_hash_keyed") is not False or "signature" in ur:
+            print("SELFTEST FAIL (unkeyed receipt must have contract_hash_keyed=false and NO "
+                  "signature field):", ur)
+            return 1
+
+        # (c) RED gate: tamper live state so the sealed suite fails, point --receipt at a fresh
+        # path, and confirm NO receipt is written — mirroring main()'s "emit iff GREEN" gate.
+        red_receipt = run / "looptimal-receipt-red.json"
+        (run / "src" / "app.py").write_text("# broken\n", encoding="utf-8")
+        bundle["artifacts"][0]["sha256"] = sha256_file(run / "src" / "app.py")
+        (run / "bundle.json").write_text(json.dumps(bundle), encoding="utf-8")
+        ok7, verdict7 = verify(run / "bundle.json", workdir=run, repeat=2)
+        if ok7:  # emit iff GREEN — a RED verify must never reach emit_receipt
+            emit_receipt(red_receipt, verdict7, run / "bundle.json", run, key=None,
+                         include_objective=False)
+        if ok7 or red_receipt.exists():
+            print("SELFTEST FAIL (RED verify emitted a receipt / unexpectedly went GREEN)")
+            return 1
     print("SELFTEST GREEN")
     return 0
 
@@ -422,6 +580,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--key-file", help="path to a hex-encoded framer HMAC key (checker-side "
                     f"only; alternative: the {FRAMER_KEY_ENV} env var). Omit to use the "
                     "original unkeyed sha256 (backward compatible, weaker).")
+    ap.add_argument("--receipt", nargs="?", const="", default=None, metavar="PATH",
+                    help="on GREEN only, write a public verification receipt (references/"
+                    "receipt.md). Bare --receipt uses <workdir>/looptimal-receipt.json; pass a "
+                    "PATH to override. Opt-in and explicit — never written on RED, never a silent "
+                    "side effect. Keyed + HMAC-signed when a framer key is configured, unkeyed "
+                    "(consistency-only) otherwise.")
+    ap.add_argument("--receipt-include-objective", action="store_true",
+                    help="include the clear-text objective in the receipt (default: objective_hash "
+                    "only, since a receipt is public).")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
@@ -429,18 +596,33 @@ def main(argv: list[str] | None = None) -> int:
     if not args.bundle:
         ap.error("--bundle is required (or use --selftest)")
     key = resolve_framer_key(args.key_file)
-    ok, verdict = verify(Path(args.bundle),
+    bundle_path = Path(args.bundle)
+    workdir = Path(args.workdir).resolve() if args.workdir else bundle_path.resolve().parent
+    ok, verdict = verify(bundle_path,
                          Path(args.workdir) if args.workdir else None,
                          args.repeat, key=key)
     blob = json.dumps(verdict, indent=2)
     if args.out:
         outp = Path(args.out).resolve()
-        if outp.parent == Path(args.bundle).resolve().parent:
+        if outp.parent == bundle_path.resolve().parent:
             print("refusing to write the verdict into the maker-writable bundle directory; "
                   "choose --out elsewhere", file=sys.stderr)
             return 2
         outp.parent.mkdir(parents=True, exist_ok=True)
         outp.write_text(blob + "\n", encoding="utf-8")
+    # Receipt emission is gated on GREEN (Emission semantics #1). On RED it is a no-op: no receipt
+    # is written and any pre-existing receipt is deliberately left untouched.
+    if args.receipt is not None:
+        if ok:
+            receipt_target = (Path(args.receipt) if args.receipt
+                              else workdir / "looptimal-receipt.json")
+            emit_receipt(receipt_target, verdict, bundle_path, workdir,
+                         key=key, include_objective=args.receipt_include_objective)
+            print(f"receipt: wrote {'keyed, signed' if key else 'unkeyed'} receipt to "
+                  f"{receipt_target}", file=sys.stderr)
+        else:
+            print("receipt: verdict is RED — no receipt written (any pre-existing receipt "
+                  "left untouched)", file=sys.stderr)
     print(blob)
     return 0 if ok else 1
 

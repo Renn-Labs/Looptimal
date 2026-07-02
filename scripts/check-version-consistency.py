@@ -22,6 +22,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _common import read_plugin_version  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / ".claude-plugin" / "plugin.json"
 CHANGELOG = ROOT / "CHANGELOG.md"
@@ -29,11 +32,12 @@ _SEMVER = re.compile(r"^\[(\d+\.\d+\.\d+)\]")  # "## [2.0.0] — ..." -> 2.0.0
 
 
 def _plugin_version() -> str:
-    data = json.loads(PLUGIN.read_text(encoding="utf-8"))
-    v = data.get("version")
-    if not v:
-        sys.exit(f"FAIL: no \"version\" in {PLUGIN.relative_to(ROOT)}")
-    return str(v).strip()
+    # Delegates to the shared _common.read_plugin_version so the version read lives in exactly one
+    # place (receipt design, Decision 5) — this guard and the receipt emitter cannot drift apart.
+    try:
+        return read_plugin_version(PLUGIN)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        sys.exit(f"FAIL: {exc}")
 
 
 def _changelog_top_version() -> str:
