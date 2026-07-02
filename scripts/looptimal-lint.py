@@ -262,8 +262,8 @@ def lint(mission_path: Path, repo_root: Path | None = None,
 
     # --- self-grade scan over the FULL serialized mission + contract ---
     blob = text_tree(mission) + "\n" + text_tree(contract)
-    if SELF_GRADE_RE.search(blob):
-        m = SELF_GRADE_RE.search(blob)
+    m = SELF_GRADE_RE.search(blob)
+    if m:
         findings.append(f"self-grading language in mission/contract: {m.group(0)!r}")
 
     # --- no hardcoded native-agent id in the generic mission (profiles may bind them) ---
@@ -305,8 +305,8 @@ def lint(mission_path: Path, repo_root: Path | None = None,
                     lc = as_dict(v)
                     break
             lc = lc or {}
-            ea = str(as_dict(roles.get(lc.get("executor_role"))).get("agent") or "").strip()
-            ca = str(as_dict(roles.get(lc.get("checker_role"))).get("agent") or "").strip()
+            ea = str(as_dict(roles.get(str(lc.get("executor_role") or ""))).get("agent") or "").strip()
+            ca = str(as_dict(roles.get(str(lc.get("checker_role") or ""))).get("agent") or "").strip()
             lid = as_dict(lane).get("id", "<lane>")
             if not (ea and ca):
                 findings.append(f"lane {lid} ({arch}): profile does not bind both an executor and checker role")

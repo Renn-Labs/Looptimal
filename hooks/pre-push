@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# hooks/pre-push — Tier 0 of the pre-push quality gate: fast, offline, stdlib-only checks
+# that should never be optional. Wire it in once per clone:
+#
+#   git config core.hooksPath hooks
+#
+# This is deliberately the FAST tier only — pure-Python, no network, no venv, seconds not
+# minutes, so it never becomes friction worth skipping. The slower tier (pyright, a local
+# skillspector scan, milestone-triggered cross-model review) lives in the
+# looptimal-prepush-gate skill (.claude/skills/looptimal-prepush-gate/SKILL.md) instead —
+# run that yourself for anything non-trivial, especially anything touching scripts/_common.py's
+# crypto, verify-outcome.py's safe_env/subprocess execution, or a release.
+#
+# Every check here already exists as a script in this repo; this just refuses to let a push
+# through if any of them are RED. Bypass with `git push --no-verify` if you really mean it —
+# but if you're reaching for that, ask why first.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+fail=0
+run_check() {
+  local name="$1"
+  shift
+  printf '  %-32s ' "$name"
+  if "$@" >/tmp/pre-push-check.$$.log 2>&1; then
+    echo "OK"
+  else
+    echo "FAIL"
+    fail=1
+    echo "    ---- output ----"
+    sed 's/^/    /' /tmp/pre-push-check.$$.log
+    echo "    ----------------"
+  fi
+  rm -f /tmp/pre-push-check.$$.log
+}
+
+echo "pre-push gate (Tier 0 — fast, offline):"
+run_check "pytest"                 python3 -m pytest tests/ -q
+run_check "looptimal-doctor"       python3 scripts/looptimal-doctor.py
+run_check "loopprint-doctor"       python3 scripts/loopprint-doctor.py
+run_check "verify-outcome selftest" python3 scripts/verify-outcome.py --selftest
+run_check "looptimal-lint selftest" python3 scripts/looptimal-lint.py --selftest
+run_check "version-consistency"    python3 scripts/check-version-consistency.py
+run_check "docs-check"             python3 scripts/looptimal-docs-check.py
+
+if [ "$fail" -ne 0 ]; then
+  echo
+  echo "pre-push gate: RED — fix the above before pushing."
+  echo "(bypass: git push --no-verify — only if you have a real reason)"
+  exit 1
+fi
+
+echo
+echo "pre-push gate: GREEN. Remember the slower tier for non-trivial changes:"
+echo "  pyright scripts/*.py"
+echo "  skillspector scan scripts --no-llm --baseline .skillspector-baseline.yaml"
+echo "  (see .claude/skills/looptimal-prepush-gate/SKILL.md for when + why)"
+exit 0

@@ -21,13 +21,28 @@ Thanks for your interest. Looptimal is a small, focused skill — contributions 
 
 ## Development
 
-There is no build step. Before opening a PR, run:
+There is no build step. This repo has a tiered pre-push quality gate — wire up the fast tier once
+per clone:
 
 ```bash
-python3 scripts/loopprint-lint.py examples/ci-triage/loop-spec.yaml   # expect: GREEN
-python3 scripts/loopprint-doctor.py                                   # expect: HEALTHY (exit 0)
-python3 scripts/loopprint-detect.py                                   # sanity-check binding resolution
-python3 scripts/check-version-consistency.py                          # plugin.json == top CHANGELOG entry
+git config core.hooksPath hooks
+```
+
+That makes `hooks/pre-push` run automatically on every `git push`: `pytest`, both doctors, both
+`--selftest`s, `check-version-consistency.py`, `looptimal-docs-check.py` — pure Python, no
+network, seconds not minutes. A failing check blocks the push (bypass with `--no-verify` only if
+you have a real reason).
+
+For anything non-trivial — and *always* for anything touching `scripts/_common.py`'s crypto,
+`verify-outcome.py`'s `safe_env`/subprocess execution, a new CLI flag, a release, or `SKILL.md`
+itself — read `.claude/skills/looptimal-prepush-gate/SKILL.md` before pushing. It covers `pyright`,
+a local `skillspector` scan (catches real security-scanner findings before CI does, not after),
+single- and cross-model code review (`peer trio`), and cross-harness compliance checks for
+`SKILL.md`/release changes. This is the actual review discipline this repo holds its own
+maker-≠-checker principle to — don't skip it because "the tests pass."
+
+```bash
+python3 scripts/loopprint-detect.py    # sanity-check binding resolution, if you touched profiles/
 ```
 
 Keep changes small and self-contained; one logical change per PR.
