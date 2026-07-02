@@ -33,13 +33,21 @@ That makes `hooks/pre-push` run automatically on every `git push`: `pytest`, bot
 network, seconds not minutes. A failing check blocks the push (bypass with `--no-verify` only if
 you have a real reason).
 
-For anything non-trivial — and *always* for anything touching `scripts/_common.py`'s crypto,
-`verify-outcome.py`'s `safe_env`/subprocess execution, a new CLI flag, a release, or `SKILL.md`
-itself — read `.claude/skills/looptimal-prepush-gate/SKILL.md` before pushing. It covers `pyright`,
-a local `skillspector` scan (catches real security-scanner findings before CI does, not after),
-single- and cross-model code review (`peer trio`), and cross-harness compliance checks for
-`SKILL.md`/release changes. This is the actual review discipline this repo holds its own
-maker-≠-checker principle to — don't skip it because "the tests pass."
+For anything non-trivial, at minimum also run:
+
+```bash
+pyright scripts/*.py                                                  # 0 errors
+skillspector scan scripts --no-llm --baseline .skillspector-baseline.yaml   # 0 new findings
+```
+`pyright` and `skillspector` (see the skill-audit CI job below) both catch real bugs `pytest`
+doesn't — a loosely-typed dict that should have been narrower, a security-scanner finding that's
+cheaper to review locally than to discover via a red CI job. Install `skillspector` per the
+`skill-audit` job in `.github/workflows/ci.yml`.
+
+*Maintainers*: for anything touching `scripts/_common.py`'s crypto, `verify-outcome.py`'s
+`safe_env`/subprocess execution, a new CLI flag, a release, or `SKILL.md` itself, this project's
+own maker-≠-checker principle applies to its own review process too — a second, independent
+reviewer (human or model) on that diff before it ships, not just "the tests pass."
 
 ```bash
 python3 scripts/loopprint-detect.py    # sanity-check binding resolution, if you touched profiles/

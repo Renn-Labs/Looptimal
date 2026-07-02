@@ -5,10 +5,9 @@
 #   git config core.hooksPath hooks
 #
 # This is deliberately the FAST tier only — pure-Python, no network, no venv, seconds not
-# minutes, so it never becomes friction worth skipping. The slower tier (pyright, a local
-# skillspector scan, milestone-triggered cross-model review) lives in the
-# looptimal-prepush-gate skill (.claude/skills/looptimal-prepush-gate/SKILL.md) instead —
-# run that yourself for anything non-trivial, especially anything touching scripts/_common.py's
+# minutes, so it never becomes friction worth skipping. Slower checks (pyright, a local
+# skillspector scan) are NOT run here — see CONTRIBUTING.md's Development section, and run
+# them yourself for anything non-trivial, especially anything touching scripts/_common.py's
 # crypto, verify-outcome.py's safe_env/subprocess execution, or a release.
 #
 # Every check here already exists as a script in this repo; this just refuses to let a push
@@ -53,8 +52,7 @@ if [ "$fail" -ne 0 ]; then
 fi
 
 echo
-echo "pre-push gate: GREEN. Remember the slower tier for non-trivial changes:"
+echo "pre-push gate: GREEN. For non-trivial changes, also run (see CONTRIBUTING.md):"
 echo "  pyright scripts/*.py"
 echo "  skillspector scan scripts --no-llm --baseline .skillspector-baseline.yaml"
-echo "  (see .claude/skills/looptimal-prepush-gate/SKILL.md for when + why)"
 exit 0
