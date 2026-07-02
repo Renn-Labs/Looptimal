@@ -123,3 +123,31 @@ fingerprints:
   reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
     hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
     See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:a216f1f17a248ebe
+  rule_id: E2
+  file: verify-outcome.py
+  reason: 'Reviewed by hand 2026-07-02, added when the --receipt feature landed: this
+    is the string-literal SOURCE of a throwaway oracle script inside run_selftest()''s
+    key-leak-closure test (~line 449-452) -- it deliberately attempts to read
+    LOOPTIMAL_FRAMER_KEY and write it to a file, to PROVE the safe_env() fix (see the
+    other E2 baseline entries above) stops it from ever seeing a real value. The scanner
+    cannot distinguish a negative test from a real exfiltration attempt. Independently
+    adversarially reviewed twice on 2026-07-02 (implementation + confirmation pass).'
+- hash: sha256:c70723821e9244a8
+  rule_id: E2
+  file: verify-outcome.py
+  reason: 'Reviewed by hand 2026-07-02, added when the --receipt feature landed: plain
+    env-var save/restore (~line 483) around the same selftest -- simulates the
+    documented CI key-delivery mode (LOOPTIMAL_FRAMER_KEY as an env var) so the test can
+    assert nothing leaks, then restores whatever was there before in a finally block.
+    Not exfiltration; not even a read of secret material outside the process.'
+- hash: sha256:ba838ef8c89bceb0
+  rule_id: MP2
+  file: verify-outcome.py
+  reason: 'Reviewed by hand 2026-07-02, added when the --receipt feature landed:
+    run_selftest()''s independent HMAC signature recomputation (~line 528-532) --
+    rebuilds the receipt-minus-signature payload and re-derives the HMAC with the same
+    key/canonicalization the emitter used, to prove the emitted signature is genuinely
+    correct rather than merely present. This is verification, not poisoning; no dict
+    mutation crosses a trust boundary. Independently adversarially reviewed twice on
+    2026-07-02 (implementation + confirmation pass) as part of the receipt feature.'
