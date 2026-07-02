@@ -22,7 +22,7 @@ No clone required — this runs the real Stage-6 outer verifier against a fixtur
 fixture, and confirms the tamper is caught:
 
 ```bash
-uvx --from git+https://github.com/Renn-Labs/Looptimal@v2.0.0 verify-outcome --selftest
+uvx --from git+https://github.com/Renn-Labs/Looptimal@v2.1.0 verify-outcome --selftest
 ```
 
 ```text
@@ -140,11 +140,11 @@ console commands via [`uv`](https://docs.astral.sh/uv/)/`pipx` — useful if you
 `looptimal-lint`/`verify-outcome` against your own mission files, not install the skill itself:
 
 ```bash
-uvx --from git+https://github.com/Renn-Labs/Looptimal@v2.0.0 verify-outcome --bundle path/to/evidence-bundle.json
+uvx --from git+https://github.com/Renn-Labs/Looptimal@v2.1.0 verify-outcome --bundle path/to/evidence-bundle.json
 ```
 
 This is a convenience layer over the same `scripts/*.py`, not a separate implementation — pin to a
-tagged ref (`@v2.0.0`, not `@main`) so the command doesn't silently move under you. Not yet on
+tagged ref (`@v2.1.0`, not `@main`) so the command doesn't silently move under you. Not yet on
 PyPI; the `uvx --from git+...` form works today without one.
 
 ## Verify it yourself

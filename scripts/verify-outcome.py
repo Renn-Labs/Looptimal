@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import os
 import subprocess
@@ -35,8 +36,8 @@ from _common import (  # noqa: E402
     TinyYamlError,
     as_dict,
     as_list,
-    candidate_paths,
     canonical_contract_hash,
+    executed_program,
     executor_writable_roots,
     is_noop_command,
     is_sealed,
@@ -51,16 +52,25 @@ DOD_FIELDS = ("contract_ref", "contract_hash", "accepted_plan_ref", "artifacts",
 
 DANGEROUS_ENV = {"LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "PYTHONPATH",
                  "PYTHONSTARTUP", "BASH_ENV", "ENV", "IFS", "NODE_OPTIONS",
-                 "NODE_PATH", "RUBYOPT", "RUBYLIB", "PERL5OPT", "PERLLIB"}
+                 "NODE_PATH", "RUBYOPT", "RUBYLIB", "PERL5OPT", "PERLLIB",
+                 FRAMER_KEY_ENV}
 
 
 def safe_env() -> dict[str, str]:
     """Inherit the toolchain env (so real checks like pytest/node still run) but drop the
     env-injection vectors and put the system bin dirs first, so a maker-planted binary on
     PATH cannot shadow a system one. Full isolation (sandbox/container) is the operator's
-    job; this defeats the common LD_*/PYTHONPATH/proxy hijacks."""
+    job; this defeats the common LD_*/PYTHONPATH/proxy hijacks.
+
+    Also strips the framer's HMAC key (2026-07-01 adversarial review, finding 1 — BLOCK):
+    every external_check runs maker-controlled code by definition (that's the entire point
+    of an oracle), so forwarding LOOPTIMAL_FRAMER_KEY here handed the checker's signing key
+    to the party it exists to check. The name-based check catches any lookalike env var a
+    future call site might introduce, not just the exact constant."""
     env = {k: v for k, v in os.environ.items()
-           if k not in DANGEROUS_ENV and not k.lower().endswith("_proxy")}
+           if k not in DANGEROUS_ENV
+           and not k.lower().endswith("_proxy")
+           and "framer_key" not in k.lower()}
     env["PATH"] = "/usr/bin:/bin:" + env.get("PATH", "")
     env.setdefault("LC_ALL", "C")
     return env
@@ -168,11 +178,11 @@ def verify(bundle_path: Path, workdir: Path | None, repeat: int,
         sealed_dir=contract_path.parent if key else None,
         exclude=contract_path if key else None,
     )
-    if normalize_hash(contract.get("contract_hash")) != canonical:
+    if not hmac.compare_digest(normalize_hash(contract.get("contract_hash")), canonical):
         findings.append("sealed contract_hash is not the canonical hash of the contract "
                         "(mismatch also fires if any file under the sealed/ directory was "
                         "modified — the hash now covers oracle-script bytes, not just contract text)")
-    if normalize_hash(bundle.get("contract_hash")) != canonical:
+    if not hmac.compare_digest(normalize_hash(bundle.get("contract_hash")), canonical):
         findings.append("bundle.contract_hash does not match the sealed contract (goal drift)")
     if key is None:
         advisories.append(
@@ -183,16 +193,18 @@ def verify(bundle_path: Path, workdir: Path | None, repeat: int,
     def _oracle_sealed(external_check: Any) -> bool:
         # The check must invoke a SEALED, workdir-contained oracle script (resolved, so a
         # symlink escape is caught) — not a tautological system command (grep/make/uname) or a
-        # writable / out-of-tree script the maker controls. >=1 path arg must resolve sealed.
-        for a in candidate_paths(external_check):
-            ap = Path(a).resolve() if os.path.isabs(a) else (workdir / a).resolve()
-            try:
-                rel = os.path.relpath(ap, workdir).replace("\\", "/")
-            except ValueError:
-                continue
-            if not rel.startswith("..") and not os.path.isabs(rel) and is_sealed(rel, writable):
-                return True
-        return False
+        # writable / out-of-tree script the maker controls. The EXECUTED program (not just any
+        # path-shaped argument — 2026-07-01 adversarial review, finding 2) must resolve sealed;
+        # a sealed data file passed to a maker-writable program no longer satisfies this.
+        prog = executed_program(external_check)
+        if not prog:
+            return False
+        ap = Path(prog).resolve() if os.path.isabs(prog) else (workdir / prog).resolve()
+        try:
+            rel = os.path.relpath(ap, workdir).replace("\\", "/")
+        except ValueError:
+            return False
+        return not rel.startswith("..") and not os.path.isabs(rel) and is_sealed(rel, writable)
 
     criteria = as_list(suite.get("criteria"))
     if not criteria:
@@ -338,6 +350,64 @@ def run_selftest() -> int:
         if ok4:
             print("SELFTEST FAIL (tampered sealed/ oracle script still GREEN under the hash-pin):",
                  verdict4)
+            return 1
+
+        # --- key-leak closure (2026-07-01 adversarial review, finding 1 — BLOCK). Every
+        # external_check runs maker-controlled code by definition, so forwarding the checker's
+        # signing key into that subprocess's environment let a maker read it back out and forge
+        # a keyed contract_hash / receipt signature. Simulate the documented, CI-recommended key
+        # delivery (LOOPTIMAL_FRAMER_KEY set on the checker's own process — see references/
+        # receipt.md's Decisions) and confirm an oracle that TRIES to exfiltrate it gets nothing.
+        leak_run = root / "leak"
+        (leak_run / "sealed").mkdir(parents=True)
+        (leak_run / "src").mkdir()
+        leak_out = leak_run / "src" / "leaked_key.txt"
+        (leak_run / "sealed" / "leak_check.py").write_text(
+            "import os, pathlib\n"
+            "pathlib.Path('src/leaked_key.txt')"
+            ".write_text(os.environ.get('LOOPTIMAL_FRAMER_KEY', ''))\n",
+            encoding="utf-8")
+        leak_contract = {
+            "schema_version": 1, "objective": "probe for framer-key leakage into an oracle",
+            "acceptance_suite": {
+                "provenance": "framer", "sealed_path": "sealed/suite.json",
+                "criteria": [{"id": "c1", "asserts": "outcome", "oracle": "key-leak-probe",
+                              "external_check": ["python3", str(leak_run / "sealed" / "leak_check.py")],
+                              "green_means": "n/a -- this criterion only probes subprocess env"}],
+            }, "irreversibles": [],
+        }
+        leak_contract["contract_hash"] = "sha256:" + canonical_contract_hash(
+            leak_contract, key=key, sealed_dir=leak_run / "sealed",
+            exclude=leak_run / "sealed" / "contract.json")
+        (leak_run / "sealed" / "contract.json").write_text(json.dumps(leak_contract), encoding="utf-8")
+        (leak_run / "mission.json").write_text(json.dumps({
+            "schema_version": 1, "contract_ref": "sealed/contract.json",
+            "capability_manifest": {"backend": {"allowed_paths": ["src/"]}},
+            "lanes": [{"id": "L1", "archetype": "task"}],
+        }), encoding="utf-8")
+        leak_bundle = {
+            "contract_ref": "sealed/contract.json", "accepted_plan_ref": "mission.json",
+            "contract_hash": canonical_contract_hash(
+                leak_contract, key=key, sealed_dir=leak_run / "sealed",
+                exclude=leak_run / "sealed" / "contract.json"),
+            "artifacts": [], "tool_receipts": [],
+            "acceptance_results": [{"criterion": "c1", "passed_by": "external_rerun", "value": "pass"}],
+            "final_state_assertion": "n/a", "unresolved_risks": [],
+            "persisted_state_update_ref": "mission.json",
+        }
+        (leak_run / "bundle.json").write_text(json.dumps(leak_bundle), encoding="utf-8")
+        prior_env_key = os.environ.get(FRAMER_KEY_ENV)
+        os.environ[FRAMER_KEY_ENV] = key.hex()
+        try:
+            verify(leak_run / "bundle.json", workdir=leak_run, repeat=1, key=key)
+        finally:
+            if prior_env_key is None:
+                os.environ.pop(FRAMER_KEY_ENV, None)
+            else:
+                os.environ[FRAMER_KEY_ENV] = prior_env_key
+        leaked = leak_out.read_text(encoding="utf-8") if leak_out.exists() else ""
+        if leaked:
+            print("SELFTEST FAIL (framer key leaked into an oracle subprocess's environment)")
             return 1
     print("SELFTEST GREEN")
     return 0

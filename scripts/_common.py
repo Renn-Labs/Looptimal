@@ -84,17 +84,29 @@ FRAMER_KEY_ENV = "LOOPTIMAL_FRAMER_KEY"  # hex-encoded; checker-side only, never
 
 def resolve_framer_key(key_file: str | None) -> bytes | None:
     """Resolve the framer's HMAC key (hex-encoded), checker-side only. Precedence: `key_file`,
-    then the LOOPTIMAL_FRAMER_KEY env var. Returns None if neither is set — the caller then
+    then the LOOPTIMAL_FRAMER_KEY env var. Returns None if NEITHER is provided — the caller then
     falls back to the original unkeyed sha256 (fully backward compatible; see
     canonical_contract_hash's docstring). This function only ever reads `key_file` / the env
     var — never anything under a mission's --workdir; keeping the key outside that boundary is
-    the checker's own responsibility, same as --workdir itself already is (see SECURITY.md)."""
+    the checker's own responsibility, same as --workdir itself already is (see SECURITY.md).
+
+    Fails closed (2026-07-01 adversarial review, finding 4) when a key source IS explicitly
+    named but unusable (an empty/whitespace-only file or env var) — that case used to silently
+    return None, so a run that believed itself keyed (the CI-recommended configuration) could
+    run unkeyed with only a non-blocking advisory. Only the "neither provided" case returns
+    None; "provided but empty" is now a hard error."""
     raw: str | None = None
+    source: str | None = None
     if key_file:
+        source = f"--key-file {key_file}"
         raw = Path(key_file).read_text(encoding="utf-8").strip()
-    elif os.environ.get(FRAMER_KEY_ENV):
+    elif FRAMER_KEY_ENV in os.environ:
+        source = FRAMER_KEY_ENV
         raw = os.environ[FRAMER_KEY_ENV].strip()
     if not raw:
+        if source is not None:
+            raise SystemExit(f"{source} was provided but empty — refusing to silently fall "
+                              "back to an unkeyed run. Unset it if unkeyed is intended.")
         return None
     try:
         return bytes.fromhex(raw)
@@ -268,10 +280,16 @@ def text_tree(value: Any) -> str:
 # Canonical contract hash (prefix-tolerant: accepts "sha256:<hex>" or bare hex)
 # --------------------------------------------------------------------------- #
 def normalize_hash(value: Any) -> str:
+    """Extract a bare lowercase hex digest, tolerant of a 'sha256:' prefix. Anything that isn't
+    a 64-hex-char run normalizes to "" rather than an arbitrary lowercased string (2026-07-01
+    adversarial review, finding 3.1) — callers compare the result with hmac.compare_digest,
+    which raises TypeError on non-ASCII str input; a maker-supplied contract_hash/bundle field
+    is hostile input and must fail CLOSED (a clean mismatch -> RED) rather than crash the
+    checker before it can even write a verdict."""
     if not value:
         return ""
     m = _HEX64.search(str(value))
-    return m.group(1).lower() if m else str(value).strip().lower()
+    return m.group(1).lower() if m else ""
 
 
 def _sha256_file(path: Path) -> str:
@@ -421,21 +439,34 @@ def is_noop_command(external_check: Any) -> bool:
     return False
 
 
-def candidate_paths(external_check: Any) -> list[str]:
-    """File-path-like arguments of an external_check (the oracle script + any path data).
-    Used to require that a check actually invokes a SEALED oracle script — not a tautological
-    system command (grep/make/uname) or a writable / out-of-tree script the maker controls."""
+def executed_program(external_check: Any) -> str | None:
+    """The program an external_check actually EXECUTES — not just any path-shaped argument.
+
+    2026-07-01 adversarial review, finding 2: the prior `candidate_paths()` check accepted a
+    check as "invokes a sealed oracle" if ANY path-like token in the command resolved sealed —
+    including a sealed *data file* passed as an argument to a maker-writable *program*, e.g.
+    `["python3", "src/passer.py", "sealed/fixture.txt"]` runs the maker's own script and was
+    accepted because `sealed/fixture.txt` happened to also be present. Only the executed
+    program can make that guarantee.
+
+    For a direct invocation (`["sealed/check.sh"]`) that's the first token. For an interpreter
+    invocation (`["python3", "sealed/check.py", ...]`) it's the first non-flag argument after
+    the interpreter — `is_noop_command()` has already rejected inline eval (`-c`/`-e`/stdin)
+    before any caller reaches this point, so what remains for an interpreter head is a script
+    argument. Returns None if no such program can be identified."""
     if isinstance(external_check, str):
         parts = external_check.split()
     elif isinstance(external_check, list):
         parts = [str(x) for x in external_check]
     else:
-        return []
-    out: list[str] = []
-    for a in parts:
-        a = a.strip()
-        if not a or a.startswith("-"):
-            continue
-        if "/" in a or a.endswith((".py", ".sh", ".bash", ".js", ".mjs", ".ts", ".rb", ".pl", ".php")):
-            out.append(a)
-    return out
+        return None
+    if not parts:
+        return None
+    head = parts[0].strip()
+    if Path(head).name in INLINE_INTERPRETERS:
+        for a in parts[1:]:
+            a = a.strip()
+            if a and not a.startswith("-"):
+                return a
+        return None
+    return head or None

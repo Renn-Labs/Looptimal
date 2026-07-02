@@ -24,6 +24,7 @@ What it enforces:
 from __future__ import annotations
 
 import argparse
+import hmac
 import sys
 import tempfile
 from pathlib import Path
@@ -39,8 +40,8 @@ from _common import (  # noqa: E402
     TinyYamlError,
     as_dict,
     as_list,
-    candidate_paths,
     canonical_contract_hash,
+    executed_program,
     executor_writable_roots,
     is_noop_command,
     is_sealed,
@@ -159,10 +160,10 @@ def lint(mission_path: Path, repo_root: Path | None = None,
         sealed_dir=contract_path.parent if framer_key else None,
         exclude=contract_path if framer_key else None,
     )
-    if normalize_hash(contract.get("contract_hash")) != canonical:
+    if not hmac.compare_digest(normalize_hash(contract.get("contract_hash")), canonical):
         findings.append("contract.contract_hash is not the canonical hash of the contract "
                         "(tampered, drifted, or unstamped)")
-    if normalize_hash(mission.get("contract_hash")) != canonical:
+    if not hmac.compare_digest(normalize_hash(mission.get("contract_hash")), canonical):
         findings.append("mission.contract_hash does not match the canonical contract hash")
     if framer_key is None and str(contract.get("sensitivity") or "").strip().lower() == "high":
         advisories.append(
@@ -193,9 +194,12 @@ def lint(mission_path: Path, repo_root: Path | None = None,
         seen_ids.add(cid)
         if is_noop_command(c.get("external_check")):
             findings.append(f"criterion {cid}: external_check is missing or a no-op command")
-        elif not any(is_sealed(p, writable) for p in candidate_paths(c.get("external_check"))):
-            findings.append(f"criterion {cid}: external_check must invoke a sealed oracle script "
-                            "(no sealed path argument)")
+        else:
+            prog = executed_program(c.get("external_check"))
+            if not prog or not is_sealed(prog, writable):
+                findings.append(f"criterion {cid}: external_check must invoke a sealed oracle "
+                                "script as the executed program (a sealed path elsewhere in "
+                                "the command, e.g. a data argument, does not count)")
         if not c.get("oracle"):
             findings.append(f"criterion {cid}: no oracle bound (every criterion must bind an oracle)")
         gm = str(c.get("green_means") or "")
