@@ -2,15 +2,16 @@
 """check-no-network-imports.py — a regression guard for Looptimal's own "stdlib-only, zero
 network calls" claim (README.md, SECURITY.md, CONTRIBUTING.md).
 
-Honesty note: this is a SELF-AUTHORED check, not an independent third-party audit. We looked at
-third-party skill-auditing tools (SkillCheck, skill-safety-auditor-style scanners) for a genuinely
-independent verification of this claim — the roadmap's own reasoning explicitly wanted a
-third-party check here for real maker != checker separation — but couldn't confirm a current,
-stable CLI for any of them without risking a CI job built on an unverified interface. This script
-is what shipped instead: a narrower, mechanically-checkable, but self-referential guard. It is a
-real regression guard (a stray network import breaks CI), just not the independent audit the
-roadmap envisioned. Contributions wiring in a genuine third-party check are welcome — see the
-Wave D discussion in this repo's history.
+Honesty note: this is a SELF-AUTHORED check, not an independent third-party audit — it was never
+meant to be one. An earlier pass looked at third-party skill-auditing tools (SkillCheck,
+skill-safety-auditor-style scanners) for a genuinely independent verification of this claim, but
+found none with a current, stable, CI-embeddable CLI. That specific gap is now closed a different
+way: CI's `skill-audit` job runs NVIDIA/SkillSpector (github.com/NVIDIA/skillspector, Apache-2.0),
+an independently authored third-party scanner, against scripts/ in --no-llm mode (free, no
+account) — see CONTRIBUTING.md and .skillspector-baseline.yaml. This script stays in place
+alongside it: a narrower, mechanically-precise, zero-false-positive guard on the exact "no
+network-capable import" claim, complementary to SkillSpector's broader (heuristic, occasionally
+false-positive) pattern scan.
 
 Parses every scripts/*.py and templates/*.py file with `ast` (not a naive text grep — avoids
 false positives from comments/strings/docstrings that merely mention a module name) and flags any

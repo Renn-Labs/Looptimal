@@ -11,8 +11,12 @@ Thanks for your interest. Looptimal is a small, focused skill — contributions 
 - **Stdlib-only scripts.** `scripts/*.py` use the Python standard library. PyYAML is the one optional
   dependency, and the tools degrade gracefully without it. No network calls — CI's `no-network-imports`
   job (`scripts/check-no-network-imports.py`) fails the build if a network-capable import creeps in.
-  Honesty note: that's a self-authored regression guard, not an independent third-party audit — we'd
-  welcome a PR wiring in a genuinely independent skill-auditing tool if a stable one turns up.
+  That check is self-authored, not an independent audit — but CI's `skill-audit` job now closes that
+  gap for real: it runs [NVIDIA/SkillSpector](https://github.com/NVIDIA/skillspector) (Apache-2.0,
+  independently authored, no relation to Renn Labs or Anthropic) against `scripts/` in `--no-llm`
+  mode, so it needs no API key, account, or paid tier. `.skillspector-baseline.yaml` records today's
+  static-analysis-only findings (hand-reviewed, not real issues — see its `reason` fields); only a
+  genuinely new finding fails the build.
 - **Honest gates.** Don't add a verifier the maker can satisfy by self-assessment. Maker ≠ checker.
 
 ## Development

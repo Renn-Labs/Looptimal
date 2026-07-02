@@ -97,3 +97,26 @@ jobs:
         with:
           python-version: "3.12"
       - run: python3 scripts/check-no-network-imports.py
+
+  skill-audit:
+    name: skill-audit (independent third-party skill-security scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # NVIDIA/SkillSpector (Apache-2.0, github.com/NVIDIA/skillspector) — independently authored,
+      # not affiliated with Renn Labs or Anthropic. --no-llm runs static analysis only, so this
+      # needs no API key, account, or paid tier (the optional LLM-assisted stage is unused here).
+      # No tagged release exists upstream yet; pinned to a commit SHA instead — bump deliberately.
+      - run: pip install "git+https://github.com/NVIDIA/skillspector.git@326a2b489411a20ed742ff13701be39ba00063c8"
+      # Scoped to scripts/*.py — the same surface no-network-imports.py guards (credential access,
+      # outbound network calls, shell exec, supply-chain issues). .skillspector-baseline.yaml
+      # records today's static-analysis-only findings, hand-reviewed as not real issues (see its
+      # 'reason' fields and CONTRIBUTING.md) — only a genuinely new finding fails this job.
+      - name: scan scripts/ and fail on any new (non-baselined) finding
+        shell: bash
+        run: |
+          skillspector scan scripts --no-llm --baseline .skillspector-baseline.yaml --format json --output skillspector-report.json
+          python3 -c "import json,sys; d=json.load(open('skillspector-report.json')); i=d.get('issues', []); [print(' ', x['severity'], x['id'], x['category'], x['location']) for x in i]; print(len(i), 'new finding(s) beyond .skillspector-baseline.yaml'); sys.exit(1 if i else 0)"

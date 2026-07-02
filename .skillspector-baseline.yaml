@@ -1,0 +1,125 @@
+# SkillSpector baseline — findings listed here are suppressed on future scans.
+# Edit 'reason' fields and add glob 'rules' as needed. See docs/SUPPRESSION.md.
+version: 1
+rules: []
+fingerprints:
+- hash: sha256:d774db6e68bd927c
+  rule_id: AST4
+  file: loopprint-doctor.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:ef43a3d0be531645
+  rule_id: AST4
+  file: loopprint-ls.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:a3053ac87b88bef4
+  rule_id: AST4
+  file: loopprint-update.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:8504360e59ab68d0
+  rule_id: AST4
+  file: looptimal-doctor.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:ae61b7ffba7f92dd
+  rule_id: AST4
+  file: looptimal-doctor.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:f171f35d39d156ad
+  rule_id: AST4
+  file: record-demo.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:b0c6b2eef1e87e2c
+  rule_id: AST4
+  file: verify-outcome.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:14e97996f69482de
+  rule_id: AS3
+  file: loopprint-doctor.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:ab941f898b2d2561
+  rule_id: AR1
+  file: looptimal-lint.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:dd9e5925cd3cb2da
+  rule_id: E2
+  file: verify-outcome.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:f49a9f9b3db9ca3c
+  rule_id: E2
+  file: verify-outcome.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:df54634e19fc3b8d
+  rule_id: E2
+  file: verify-outcome.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:b3589c85c19ac50b
+  rule_id: MP2
+  file: looptimal-lint.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:d1c1b97683eb8500
+  rule_id: MP2
+  file: looptimal-lint.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:9d326cb02655fa6d
+  rule_id: MP2
+  file: looptimal-lint.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:8ba53ad5a942f45d
+  rule_id: MP2
+  file: verify-outcome.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:dee6c50abed14199
+  rule_id: OH1
+  file: loopprint-doctor.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:e4f86bd3ad275a84
+  rule_id: OH1
+  file: looptimal-doctor.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:c7ec102826393ac0
+  rule_id: RA2
+  file: loopprint-ls.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
+- hash: sha256:6fde8558cfc97c5f
+  rule_id: RA1
+  file: loopprint-skillify.py
+  reason: 'Static-only (--no-llm, free/no-account) heuristic finding, reviewed by
+    hand at adoption 2026-07-02: not a real credential/network/shell issue in scripts/*.py.
+    See CONTRIBUTING.md. Re-triage if scripts/ changes materially.'
