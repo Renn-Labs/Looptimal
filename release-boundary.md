@@ -98,11 +98,22 @@ repo's `main` branch** — there is no separate, unpublished source this release
 3. ☑ Ran the `RELEASE.md` offline gates + hazard scan from a clean tree — all GREEN/HEALTHY, hazard
    scan matches reviewed and confirmed pre-existing/benign (no new secrets, local paths, or private
    references). 2026-07-01.
-4. ☐ Adversarial review of the enforcement scripts for gaming bypasses (`looptimal-lint.py`,
-   `verify-outcome.py`, `_common.py`) — in progress, required before tagging.
-5. ☐ Tag **`v2.1.0`** and cut the GitHub Release.
-6. ☐ **Only then** — separate maintainer "go" — publish any announcement referencing v2.1.0
-   specifically (the existing v2.0.0 announcement gate at item 6 above is unaffected/still open).
+4. ☑ Adversarial review of the enforcement scripts for gaming bypasses (`looptimal-lint.py`,
+   `verify-outcome.py`, `_common.py`) — found and BLOCKed on a real, exploit-tested bypass (the
+   framer HMAC key leaked into every oracle subprocess's environment via `safe_env()`, in exactly
+   the documented CI-recommended key-delivery mode); fixed with an exploit-tested `--selftest`
+   proving closure, plus 3 related hardening fixes from the same pass. A follow-up confirmation
+   review then caught one regression the fix itself introduced (a crash on non-ASCII maker input)
+   and that was fixed too. Final verdict: sufficient to unblock. 2026-07-01.
+5. ☑ Tagged **`v2.1.0`** (SSH-signed, `cf533c2`) and cut the GitHub Release. 2026-07-01.
+6. ☑ **Post-release falsification** (mandatory, not just pre-release): from a genuinely fresh temp
+   dir, `uvx --from git+...@v2.1.0 verify-outcome --selftest` → `SELFTEST GREEN`; a fresh
+   `git clone --branch v2.1.0` running README's full "Verify it yourself" block (incl. the
+   `--key-file` example that also failed at the old tag) → all green. The bug this release exists
+   to fix is confirmed closed, not just asserted. 2026-07-01.
+7. ☐ **Separate maintainer "go"** before publishing any announcement referencing v2.1.0
+   specifically (the existing v2.0.0 announcement gate above is unaffected/still open) — launch
+   copy is drafted (`.omc/plans/launch-kit/`) but nothing has been posted.
 
 ---
 
