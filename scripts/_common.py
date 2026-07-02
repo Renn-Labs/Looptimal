@@ -134,6 +134,30 @@ def read_plugin_version(manifest: Path | None = None) -> str:
     return str(version).strip()
 
 
+# The single canonical "current released version" source — CHANGELOG.md's topmost heading.
+CHANGELOG_PATH = Path(__file__).resolve().parent.parent / "CHANGELOG.md"
+_CHANGELOG_TOP_VERSION_RE = re.compile(r"^\[(\d+\.\d+\.\d+)\]")  # "## [2.0.0] - ..." -> 2.0.0
+
+
+def read_changelog_top_version(changelog: Path | None = None) -> str:
+    """Read the current released version from CHANGELOG.md's topmost '## [x.y.z]' heading.
+
+    Factored here (docs rot-radar gate, 2026-07-02) so check-version-consistency.py and
+    looptimal-docs-check.py cannot drift on HOW "the current version" is derived — same
+    reasoning as read_plugin_version() above (2026-07-01 receipt design, Decision 5): the read
+    lives in exactly one place. Raises ValueError when no '## [x.y.z]' release heading is
+    found; propagates OSError when the file cannot be read. Callers that must not crash decide
+    how to degrade."""
+    path = Path(changelog) if changelog is not None else CHANGELOG_PATH
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("## "):
+            m = _CHANGELOG_TOP_VERSION_RE.match(line[3:].strip())
+            if m:
+                return m.group(1)
+    raise ValueError(f"no '## [x.y.z]' release heading found in {path}")
+
+
 class TinyYamlError(ValueError):
     pass
 
@@ -408,6 +432,19 @@ def is_sealed(path_text: Any, writable_roots: set[str]) -> bool:
         if r and r not in {".", "./"} and (p == r or p.startswith(r + "/")):
             return False
     return True
+
+
+def is_traversing_ref(ref: Any) -> bool:
+    """True if `ref` is NOT a safe repo-relative path — i.e. it is absolute or contains a '..'
+    parent-traversal segment. The single source of truth for the guard verify-outcome.py applies
+    to maker-/receipt-influenced refs (a bundle's contract_ref / accepted_plan_ref, a receipt's
+    contract_ref / evidence_bundle_ref) before joining them onto a base dir, so a hostile ref
+    cannot escape the run/receipt directory via an absolute path or '../'. Backslashes are
+    normalized first so a Windows-style '..\\x' is caught the same as '../x'; this mirrors the
+    exact `startswith('/') or os.path.isabs(...) or '..' in split('/')` check the verifier already
+    used inline, now shared rather than duplicated a fourth and fifth time."""
+    s = str(ref or "").replace("\\", "/")
+    return s.startswith("/") or os.path.isabs(s) or ".." in s.split("/")
 
 
 VALID_VISIBILITIES = ("maker-visible", "checker-only")

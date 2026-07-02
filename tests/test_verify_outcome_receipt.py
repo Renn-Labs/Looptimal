@@ -250,3 +250,135 @@ def test_emit_receipt_rejects_traversing_contract_ref(tmp_path):
         vo.emit_receipt(target, fake_verdict, bundle_path, bundle_dir,
                         key=None, include_objective=False)
     assert not target.exists()
+
+
+# ---- check-receipt (references/receipt.md, "Verification semantics") -----------------
+# The counterpart to the emission cases above. These drive the real --check-receipt CLI the
+# way a third-party re-checker would, and close the same "covered only by --selftest" gap the
+# emit side was flagged for. Each emits an honest receipt first (via the proven --receipt path),
+# then re-checks it; the RED cases assert the EXACT failed step, not just a non-zero exit.
+def _emit(run: Path, fx: dict, *, key_file: Path | None = None, path: Path | None = None) -> Path:
+    args = ["--bundle", str(fx["bundle_path"]), "--workdir", str(run), "--repeat", "1"]
+    if key_file is not None:
+        args += ["--key-file", str(key_file)]
+    args += ["--receipt"] + ([str(path)] if path is not None else [])
+    proc = _run_cli(*args, cwd=run)
+    assert proc.returncode == 0, proc.stderr
+    return path if path is not None else (run / "looptimal-receipt.json")
+
+
+def _check(receipt: Path, *, cwd: Path, key_file: Path | None = None) -> dict:
+    args = ["--check-receipt", str(receipt), "--repeat", "1"]
+    if key_file is not None:
+        args += ["--key-file", str(key_file)]
+    proc = _run_cli(*args, cwd=cwd)
+    report = json.loads(proc.stdout)
+    # exit code and the JSON verdict must always agree (0<->GREEN, 1<->RED)
+    assert (proc.returncode == 0) == (report["result"] == "GREEN"), proc.stdout
+    return report
+
+
+# ---- 8: keyed GREEN receipt re-checks GREEN, with the signature step recorded
+def test_check_receipt_keyed_green(tmp_path):
+    key_bytes, key_file = _gen_key(tmp_path)
+    run = tmp_path / "run"
+    fx = _write_fixture(run, key=key_bytes)
+    receipt = _emit(run, fx, key_file=key_file)
+
+    report = _check(receipt, cwd=run, key_file=key_file)
+    assert report["result"] == "GREEN"
+    assert report["failed_step"] is None
+    assert any("signature re-verifies" in s for s in report["steps"])
+    assert report["advisories"] == []  # keyed: no consistency-only caveat
+
+
+# ---- 9: a keyed receipt cannot be checked with NO key — fail loud, never silent downgrade
+def test_check_receipt_keyed_without_key_fails_loud(tmp_path):
+    key_bytes, key_file = _gen_key(tmp_path)
+    run = tmp_path / "run"
+    fx = _write_fixture(run, key=key_bytes)
+    receipt = _emit(run, fx, key_file=key_file)
+
+    report = _check(receipt, cwd=run, key_file=None)  # _clean_env also strips the env key
+    assert report["result"] == "RED"
+    assert report["failed_step"] == "4 (key required)"
+
+
+# ---- 10: editing one cosmetic field of a keyed receipt breaks the signature -> RED
+def test_check_receipt_keyed_cosmetic_tamper_is_red(tmp_path):
+    key_bytes, key_file = _gen_key(tmp_path)
+    run = tmp_path / "run"
+    fx = _write_fixture(run, key=key_bytes)
+    receipt = _emit(run, fx, key_file=key_file)
+
+    d = json.loads(receipt.read_text(encoding="utf-8"))
+    d["ci_run_url"] = "https://example.com/forged/actions/runs/999"  # cosmetic, unsigned-looking
+    receipt.write_text(json.dumps(d, indent=2) + "\n", encoding="utf-8")
+
+    report = _check(receipt, cwd=run, key_file=key_file)
+    assert report["result"] == "RED"
+    assert report["failed_step"] == "5 (signature)"
+
+
+# ---- 11: tampering live state after emission makes the live re-run fail -> RED, even though
+#          the (keyed, signed) receipt file itself is byte-for-byte honest and untouched.
+def test_check_receipt_live_state_regression_is_red(tmp_path):
+    key_bytes, key_file = _gen_key(tmp_path)
+    run = tmp_path / "run"
+    fx = _write_fixture(run, key=key_bytes)
+    receipt = _emit(run, fx, key_file=key_file)
+
+    # Break ONLY the live target (not the bundle bytes), so it is the live re-run — not the
+    # evidence_bundle_sha256 step — that catches the regression.
+    (run / "src" / "app.py").write_text("# broken\n", encoding="utf-8")
+
+    report = _check(receipt, cwd=run, key_file=key_file)
+    assert report["result"] == "RED"
+    assert report["failed_step"] == "6 (live re-run)"
+
+
+# ---- 12: unkeyed GREEN receipt re-checks GREEN but is reported consistency-only
+def test_check_receipt_unkeyed_green_is_consistency_only(tmp_path):
+    run = tmp_path / "run"
+    fx = _write_fixture(run, key=None)
+    receipt = _emit(run, fx, key_file=None)
+
+    report = _check(receipt, cwd=run, key_file=None)
+    assert report["result"] == "GREEN"
+    assert any("consistency" in a.lower() for a in report["advisories"])
+    assert any("authorship" in a.lower() for a in report["advisories"])
+
+
+# ---- 13: a receipt whose verdict/schema/kind is unsound is rejected at step 1
+@pytest.mark.parametrize("mutate,expected_step", [
+    (lambda d: d.update(verdict="RED"), "1 (verdict)"),
+    (lambda d: d.update(schema_version=2), "1 (schema_version)"),
+    (lambda d: d.update(kind="not-a-receipt"), "1 (kind)"),
+])
+def test_check_receipt_rejects_unsound_header(tmp_path, mutate, expected_step):
+    run = tmp_path / "run"
+    fx = _write_fixture(run, key=None)
+    receipt = _emit(run, fx, key_file=None)
+
+    d = json.loads(receipt.read_text(encoding="utf-8"))
+    mutate(d)
+    receipt.write_text(json.dumps(d, indent=2) + "\n", encoding="utf-8")
+
+    report = _check(receipt, cwd=run, key_file=None)
+    assert report["result"] == "RED"
+    assert report["failed_step"] == expected_step
+
+
+# ---- 14: path-traversal guard on the receipt's own refs — a direct unit test of
+#          check_receipt()'s internal safety property (mirrors test 7 for the emit side).
+def test_check_receipt_rejects_traversing_refs(tmp_path):
+    receipt = tmp_path / "looptimal-receipt.json"
+    receipt.write_text(json.dumps({
+        "kind": "looptimal-receipt", "schema_version": 1, "verdict": "GREEN",
+        "evidence_bundle_ref": "../../outside/evidence-bundle.json",
+        "contract_ref": "sealed/contract.json", "contract_hash_keyed": False,
+    }), encoding="utf-8")
+
+    ok, report = vo.check_receipt(receipt, tmp_path, repeat=1, key=None)
+    assert ok is False
+    assert report["failed_step"] == "2 (evidence_bundle_ref)"

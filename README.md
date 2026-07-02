@@ -99,7 +99,10 @@ replacement for it.
 
 Spec-driven tools like GitHub spec-kit and AWS Kiro **write** a spec, which is a real and different
 problem. Neither verifies the built thing against a live outcome once the spec is implemented —
-that's exactly what Stage 6 (Verify-outcome) exists to close.
+that's exactly what Stage 6 (Verify-outcome) exists to close. If a target repo already has
+spec-kit or Kiro artifacts, `scripts/looptimal-frame-ingest.py` is an optional Stage-0 Frame
+helper that surfaces them as candidate acceptance-criteria text for a human to accept or edit —
+it never auto-seals anything into a real contract.
 
 If you just want a loop that runs, those tools are great at that. Looptimal is for when you need to
 prove what it claims when it's done — CI for agent done-claims, not another way to write or run one.
@@ -171,6 +174,11 @@ python3 scripts/verify-outcome.py --bundle examples/issue-to-pr-bugfix/evidence-
 # so it is HMAC-signed; bare --receipt writes <workdir>/looptimal-receipt.json (never on RED):
 python3 scripts/verify-outcome.py --bundle examples/issue-to-pr-bugfix/evidence-bundle.json \
   --workdir examples/issue-to-pr-bugfix --repeat 3 --key-file "$K" --receipt
+
+# Re-verify an existing receipt from first principles (re-derive its hashes, re-check the HMAC
+# signature, and RE-RUN the sealed suite live) — a keyed receipt needs its key or it fails loud:
+python3 scripts/verify-outcome.py --check-receipt examples/issue-to-pr-bugfix/looptimal-receipt.json \
+  --workdir examples/issue-to-pr-bugfix --repeat 3 --key-file "$K"
 ```
 
 ## Security model (and its honest limit)

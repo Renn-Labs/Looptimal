@@ -42,6 +42,7 @@ from _common import (  # noqa: E402
     executor_writable_roots,
     is_noop_command,
     is_sealed,
+    is_traversing_ref,
     load_config,
     normalize_hash,
     read_plugin_version,
@@ -116,7 +117,7 @@ def verify(bundle_path: Path, workdir: Path | None, repeat: int,
 
     try:
         bundle = as_dict(load_config(bundle_path))
-    except (TinyYamlError, OSError, json.JSONDecodeError) as exc:
+    except (TinyYamlError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         return False, {"result": "RED", "findings": [f"cannot load bundle: {exc}"]}
 
     for f in DOD_FIELDS:
@@ -127,25 +128,25 @@ def verify(bundle_path: Path, workdir: Path | None, repeat: int,
     if not contract_ref:
         return False, {"result": "RED", "findings": findings + ["bundle has no contract_ref"]}
     cref = str(contract_ref).replace("\\", "/")
-    if cref.startswith("/") or os.path.isabs(cref) or ".." in cref.split("/"):
+    if is_traversing_ref(contract_ref):
         return False, {"result": "RED", "findings": findings + [
             f"contract_ref must be a relative, non-traversing path inside the run dir: {contract_ref!r}"]}
     contract_path = (bdir / cref).resolve()
     try:
         contract = as_dict(load_config(contract_path))
-    except (TinyYamlError, OSError, json.JSONDecodeError) as exc:
+    except (TinyYamlError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         return False, {"result": "RED", "findings": findings + [f"sealed contract not loadable: {exc}"]}
 
     mission: dict[str, Any] = {}
     plan_ref = bundle.get("accepted_plan_ref")
     if plan_ref:
         pref = str(plan_ref).replace("\\", "/")
-        if pref.startswith("/") or os.path.isabs(pref) or ".." in pref.split("/"):
+        if is_traversing_ref(plan_ref):
             findings.append(f"accepted_plan_ref must be a relative, non-traversing path: {plan_ref!r}")
         else:
             try:
                 mission = as_dict(load_config((bdir / pref).resolve()))
-            except (TinyYamlError, OSError, json.JSONDecodeError):
+            except (TinyYamlError, OSError, UnicodeDecodeError, json.JSONDecodeError):
                 findings.append("accepted_plan_ref not loadable — cannot derive sealed roots")
     writable = executor_writable_roots(mission)
     suite = as_dict(contract.get("acceptance_suite"))
@@ -302,7 +303,7 @@ def emit_receipt(receipt_path: Path, verdict: dict[str, Any], bundle_path: Path,
     # bundle already passed it once: emit_receipt re-reads a maker-influenced ref independently,
     # and a future caller (e.g. a standalone re-check) could reach this code without verify()
     # having validated it first. Defense-in-depth, not a live hole today.
-    if contract_ref.startswith("/") or os.path.isabs(contract_ref) or ".." in contract_ref.split("/"):
+    if is_traversing_ref(contract_ref):
         raise ValueError(f"contract_ref must be a relative, non-traversing path: {contract_ref!r}")
     contract_path = (bundle_path.parent / contract_ref).resolve()
     objective_text = str(as_dict(load_config(contract_path)).get("objective") or "")
@@ -354,6 +355,165 @@ def emit_receipt(receipt_path: Path, verdict: dict[str, Any], bundle_path: Path,
     receipt_path = Path(receipt_path)
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+
+
+def check_receipt(receipt_path: Path, workdir: Path | None, repeat: int,
+                  key: bytes | None = None) -> tuple[bool, dict[str, Any]]:
+    """Re-verify a public verification receipt (references/receipt.md, "Verification semantics").
+
+    This is the counterpart to emit_receipt(): given only a receipt on disk (plus, for a keyed
+    one, the framer key), independently re-derive everything the receipt asserts and RE-RUN the
+    sealed suite live — exactly what a third party or CI job would do. The live re-run is
+    authoritative; the receipt's recorded fields can only LOSE to it, never win. Steps mirror the
+    spec 1:1 and any single failure is RED, reported with the exact step that failed.
+
+    workdir: the live target-repo root the sealed suite is re-run against. Defaults to the
+    receipt's OWN directory, because a receipt is emitted at <workdir>/looptimal-receipt.json by
+    convention (emit_receipt / Emission semantics #4) — so the file's directory IS the workdir it
+    was produced against, and evidence_bundle_ref (a relpath to that workdir) resolves cleanly
+    from it. An explicit --workdir overrides this for a receipt that was moved away from its root.
+
+    Returns (ok, report); report carries result/failed_step/reason plus a per-step `steps` log and
+    non-blocking `advisories` (mirroring verify()'s verdict shape), so main() can print it as JSON
+    the same way the Stage-6 verdict is printed."""
+    steps: list[str] = []
+    advisories: list[str] = []
+
+    def red(step: str, reason: str) -> tuple[bool, dict[str, Any]]:
+        return False, {"result": "RED", "failed_step": step, "reason": reason,
+                       "steps": steps, "advisories": advisories,
+                       "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+
+    receipt_path = receipt_path.resolve()
+    rdir = receipt_path.parent
+    workdir = (workdir or rdir).resolve()
+
+    # --- Step 1: load; kind / schema_version / verdict must be sound.
+    try:
+        receipt = as_dict(load_config(receipt_path))
+    except (TinyYamlError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return red("1 (load)", f"cannot load receipt at {receipt_path}: {exc}")
+    if receipt.get("kind") != "looptimal-receipt":
+        return red("1 (kind)", f"kind != 'looptimal-receipt' (got {receipt.get('kind')!r})")
+    sv = receipt.get("schema_version")
+    if sv != 1:
+        return red("1 (schema_version)",
+                   f"unsupported schema_version {sv!r} — this checker understands 1 only; a receipt "
+                   "from a newer Looptimal must be re-checked with a matching verify-outcome.py "
+                   "(refusing rather than guessing)")
+    if receipt.get("verdict") != "GREEN":
+        return red("1 (verdict)",
+                   f"verdict != 'GREEN' (got {receipt.get('verdict')!r}) — a receipt for a "
+                   "non-GREEN run must never exist, so any other value is itself a failure")
+    steps.append("1 ok: kind/schema_version/verdict sound")
+
+    # --- Step 2: resolve refs, non-traversing, off the receipt's directory (== workdir by default).
+    # evidence_bundle_ref is workdir-relative (emit_receipt stored a relpath to workdir); contract_ref
+    # is resolved relative to the RESOLVED bundle's own dir, exactly as verify() resolves a bundle's
+    # contract_ref — so the Step-4 hash re-derivation and the Step-6 live re-run agree on one and the
+    # same contract file. The shared traversal guard keeps either ref from escaping its base.
+    bundle_ref = receipt.get("evidence_bundle_ref")
+    contract_ref = receipt.get("contract_ref")
+    if not bundle_ref or is_traversing_ref(bundle_ref):
+        return red("2 (evidence_bundle_ref)",
+                   f"evidence_bundle_ref must be a relative, non-traversing path: {bundle_ref!r}")
+    if not contract_ref or is_traversing_ref(contract_ref):
+        return red("2 (contract_ref)",
+                   f"contract_ref must be a relative, non-traversing path: {contract_ref!r}")
+    bundle_path = (workdir / str(bundle_ref).replace("\\", "/")).resolve()
+    contract_path = (bundle_path.parent / str(contract_ref).replace("\\", "/")).resolve()
+    steps.append("2 ok: contract_ref / evidence_bundle_ref resolve inside the run dir")
+
+    # --- Step 3: re-derive the evidence-bundle hash from the bytes on disk.
+    if not bundle_path.is_file():
+        return red("3 (evidence bundle)", f"evidence bundle not found at {bundle_path}")
+    actual_bundle_sha = sha256_file(bundle_path)
+    if not hmac.compare_digest(actual_bundle_sha, normalize_hash(receipt.get("evidence_bundle_sha256"))):
+        return red("3 (evidence_bundle_sha256)",
+                   f"evidence bundle bytes on disk do not match evidence_bundle_sha256 "
+                   f"(recomputed {actual_bundle_sha[:12]}…)")
+    steps.append("3 ok: evidence_bundle_sha256 matches the bundle bytes on disk")
+
+    # --- Step 4: re-derive the contract hash in the mode the receipt declares. A keyed receipt
+    # CANNOT be checked without the key — fail loud rather than silently downgrade to an unkeyed
+    # check (which would "verify" a forgery). An unkeyed receipt is derived unkeyed even if a key
+    # happens to be supplied, since that is how its contract_hash was sealed.
+    keyed = bool(receipt.get("contract_hash_keyed"))
+    if keyed and key is None:
+        return red("4 (key required)",
+                   "receipt declares contract_hash_keyed=true but no framer key was supplied "
+                   f"(--key-file / {FRAMER_KEY_ENV}) — cannot verify a keyed receipt without the "
+                   "key; refusing to downgrade to an unkeyed check")
+    mode_key = key if keyed else None
+    try:
+        contract = as_dict(load_config(contract_path))
+    except (TinyYamlError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return red("4 (contract load)", f"sealed contract not loadable at {contract_path}: {exc}")
+    canonical = canonical_contract_hash(
+        contract, key=mode_key,
+        sealed_dir=contract_path.parent if mode_key else None,
+        exclude=contract_path if mode_key else None,
+    )
+    if not hmac.compare_digest(normalize_hash(receipt.get("contract_hash")), canonical):
+        return red("4 (contract_hash)",
+                   "receipt.contract_hash does not match the canonical hash re-derived from the "
+                   f"sealed contract on disk in {'keyed' if keyed else 'unkeyed'} mode "
+                   "(also fires if any file under sealed/ changed when keyed)")
+    steps.append(f"4 ok: contract_hash re-derives from the sealed contract ({'keyed' if keyed else 'unkeyed'})")
+
+    # --- Step 5: signature. The key toggles BOTH the keyed contract_hash AND the receipt signature
+    # as a pair (receipt.md, "The key toggles both") — reject the inconsistent shapes outright, then
+    # recompute the HMAC over the receipt-minus-signature with the emitter's exact canonicalization.
+    sig = receipt.get("signature")
+    if keyed:
+        assert key is not None  # established by the Step-4 guard above; not visible to the
+        # type checker across the intervening `mode_key = key if keyed else None` rebinding.
+        if not isinstance(sig, dict) or not sig.get("value"):
+            return red("5 (signature)",
+                       "keyed receipt (contract_hash_keyed=true) is missing a signature — a keyed "
+                       "contract_hash with no signature is an invalid receipt")
+        payload = {k: v for k, v in receipt.items() if k != "signature"}
+        payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                                   ensure_ascii=True).encode("utf-8")
+        expected = hmac.new(key, payload_bytes, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(str(sig.get("value")), expected):
+            return red("5 (signature)",
+                       "receipt signature does not match an HMAC re-computation over the receipt "
+                       "payload with the supplied key — the receipt was altered or signed with a "
+                       "different key")
+        steps.append("5 ok: HMAC signature re-verifies against the receipt payload")
+    else:
+        if isinstance(sig, dict):
+            return red("5 (signature)",
+                       "unkeyed receipt (contract_hash_keyed=false) must not carry a signature — a "
+                       "signature with no keyed hash is an invalid receipt")
+        advisories.append(
+            "unkeyed receipt: this check proves internal CONSISTENCY (hashes + live re-run agree), "
+            "NOT authorship — an unkeyed receipt has no signature, so anyone could have authored it "
+            "(references/receipt.md, Limits). Only a keyed receipt or a CI re-run proves authenticity.")
+        steps.append("5 skipped: unkeyed receipt has no signature to check (consistency-only)")
+
+    # --- Step 6: re-run the sealed suite LIVE — authoritative. Same mode as the receipt (mode_key),
+    # so an unkeyed receipt re-runs unkeyed and a keyed one keyed. GREEN is required, and the set of
+    # criterion IDs that pass live MUST equal the receipt's criteria_passed (a stale/forged subset or
+    # superset is a fail — the live run wins, the recorded field can only lose to it).
+    ok, verdict = verify(bundle_path, workdir, repeat, key=mode_key)
+    if not ok:
+        return red("6 (live re-run)",
+                   "live re-run of the sealed suite did NOT return GREEN — the receipt cannot "
+                   f"outlive the outcome it recorded. findings: {verdict.get('findings')}")
+    live_passed = sorted(str(c.get("criterion")) for c in as_list(verdict.get("criteria")) if c.get("passed"))
+    recorded_passed = sorted(str(x) for x in as_list(receipt.get("criteria_passed")))
+    if live_passed != recorded_passed:
+        return red("6 (criteria mismatch)",
+                   f"live re-run passed {live_passed} but receipt.criteria_passed is "
+                   f"{recorded_passed} — the live re-run is authoritative")
+    steps.append(f"6 ok: live re-run GREEN and criteria_passed matches {live_passed}")
+
+    # --- Step 7: verifies iff every step passed.
+    return True, {"result": "GREEN", "failed_step": None, "reason": None,
+                  "steps": steps, "advisories": advisories,
+                  "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
 
 def run_selftest() -> int:
@@ -567,6 +727,82 @@ def run_selftest() -> int:
         if ok7 or red_receipt.exists():
             print("SELFTEST FAIL (RED verify emitted a receipt / unexpectedly went GREEN)")
             return 1
+
+        # --- receipt VERIFICATION (references/receipt.md, "Verification semantics"). Proves the
+        # checker's anti-forgery claims mechanically, mirroring the tamper-to-RED pattern above:
+        # (a) an honest keyed receipt re-checks GREEN; (e) that same keyed receipt with NO key
+        # fails loud (never a silent downgrade); (b) editing one cosmetic field breaks the HMAC
+        # signature -> RED; (c) tampering live state after emission makes the live re-run fail -> RED
+        # (the receipt cannot outlive the outcome it recorded, even though the signed file is
+        # untouched); (d) an honest UNKEYED receipt re-checks GREEN but is reported consistency-only,
+        # never silently upgraded to an authorship claim. Restore the honest keyed state first (the
+        # RED gate above left app.py broken and the tree resealed unkeyed).
+        (run / "src" / "app.py").write_text("# fixed\nreturn 404\n", encoding="utf-8")
+        contract["contract_hash"] = "sha256:" + canonical_contract_hash(
+            contract, key=key, sealed_dir=run / "sealed", exclude=run / "sealed" / "contract.json")
+        (run / "sealed" / "contract.json").write_text(json.dumps(contract), encoding="utf-8")
+        bundle["contract_hash"] = canonical_contract_hash(
+            contract, key=key, sealed_dir=run / "sealed", exclude=run / "sealed" / "contract.json")
+        bundle["artifacts"][0]["sha256"] = sha256_file(run / "src" / "app.py")
+        (run / "bundle.json").write_text(json.dumps(bundle), encoding="utf-8")
+        ok8, verdict8 = verify(run / "bundle.json", workdir=run, repeat=2, key=key)
+        if not ok8:
+            print("SELFTEST FAIL (honest keyed bundle went RED before check-receipt):",
+                  verdict8["findings"])
+            return 1
+        cr_keyed = run / "looptimal-receipt-check.json"
+        emit_receipt(cr_keyed, verdict8, run / "bundle.json", run, key=key, include_objective=False)
+
+        # (a) honest keyed receipt re-checks GREEN.
+        ok_a, rep_a = check_receipt(cr_keyed, run, repeat=2, key=key)
+        if not ok_a:
+            print("SELFTEST FAIL (honest keyed receipt did not re-check GREEN):", rep_a)
+            return 1
+        # (e) a keyed receipt with NO key fails loud at Step 4 — never a silent unkeyed downgrade.
+        ok_e, rep_e = check_receipt(cr_keyed, run, repeat=2, key=None)
+        if ok_e or "key required" not in str(rep_e.get("failed_step", "")):
+            print("SELFTEST FAIL (keyed receipt re-checked without a key / wrong step):", rep_e)
+            return 1
+        # (b) hand-edit one cosmetic field (ci_run_url) -> signature mismatch -> RED.
+        tampered = json.loads(cr_keyed.read_text(encoding="utf-8"))
+        tampered["ci_run_url"] = "https://example.com/forged/actions/runs/999"
+        cr_tampered = run / "looptimal-receipt-check-tampered.json"
+        cr_tampered.write_text(json.dumps(tampered, indent=2) + "\n", encoding="utf-8")
+        ok_b, rep_b = check_receipt(cr_tampered, run, repeat=2, key=key)
+        if ok_b or "signature" not in str(rep_b.get("failed_step", "")):
+            print("SELFTEST FAIL (cosmetically-edited keyed receipt still verified / wrong step):",
+                  rep_b)
+            return 1
+        # (c) tamper live state after emission -> the (still byte-for-byte honest, signed) receipt's
+        # live re-run fails -> RED. Isolates that Step 6 is what catches outcome regression.
+        (run / "src" / "app.py").write_text("# broken\n", encoding="utf-8")
+        ok_c, rep_c = check_receipt(cr_keyed, run, repeat=2, key=key)
+        if ok_c or "live re-run" not in str(rep_c.get("failed_step", "")):
+            print("SELFTEST FAIL (receipt verified against tampered live state / wrong step):", rep_c)
+            return 1
+        (run / "src" / "app.py").write_text("# fixed\nreturn 404\n", encoding="utf-8")  # restore
+
+        # (d) honest UNKEYED receipt re-checks GREEN and is reported consistency-only. Reseal the
+        # tree under the plain unkeyed sha256 first (matches the unkeyed emission case above).
+        contract["contract_hash"] = "sha256:" + canonical_contract_hash(contract)
+        (run / "sealed" / "contract.json").write_text(json.dumps(contract), encoding="utf-8")
+        bundle["contract_hash"] = canonical_contract_hash(contract)
+        bundle["artifacts"][0]["sha256"] = sha256_file(run / "src" / "app.py")
+        (run / "bundle.json").write_text(json.dumps(bundle), encoding="utf-8")
+        ok9, verdict9 = verify(run / "bundle.json", workdir=run, repeat=2)
+        if not ok9:
+            print("SELFTEST FAIL (honest unkeyed bundle went RED before check-receipt):",
+                  verdict9["findings"])
+            return 1
+        cr_unkeyed = run / "looptimal-receipt-check-unkeyed.json"
+        emit_receipt(cr_unkeyed, verdict9, run / "bundle.json", run, key=None, include_objective=False)
+        ok_d, rep_d = check_receipt(cr_unkeyed, run, repeat=2, key=None)
+        if not ok_d:
+            print("SELFTEST FAIL (honest unkeyed receipt did not re-check GREEN):", rep_d)
+            return 1
+        if not any("consistency" in a.lower() for a in rep_d.get("advisories", [])):
+            print("SELFTEST FAIL (unkeyed receipt re-check did not report consistency-only):", rep_d)
+            return 1
     print("SELFTEST GREEN")
     return 0
 
@@ -589,12 +825,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--receipt-include-objective", action="store_true",
                     help="include the clear-text objective in the receipt (default: objective_hash "
                     "only, since a receipt is public).")
+    ap.add_argument("--check-receipt", metavar="PATH", default=None,
+                    help="re-verify an existing public receipt (references/receipt.md, 'Verification "
+                    "semantics'): re-derive its hashes, re-check its HMAC signature when keyed, and "
+                    "RE-RUN the sealed suite live against --workdir (default: the receipt's own dir). "
+                    "Standalone mode, separate from --bundle/--receipt. A keyed receipt REQUIRES a "
+                    f"framer key (--key-file / {FRAMER_KEY_ENV}); refusing one is a hard fail, never a "
+                    "silent downgrade. Exit 0 = GREEN, 1 = RED.")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
         return run_selftest()
+    if args.check_receipt is not None:
+        key = resolve_framer_key(args.key_file)
+        ok, report = check_receipt(Path(args.check_receipt),
+                                   Path(args.workdir).resolve() if args.workdir else None,
+                                   args.repeat, key=key)
+        print(json.dumps(report, indent=2))
+        return 0 if ok else 1
     if not args.bundle:
-        ap.error("--bundle is required (or use --selftest)")
+        ap.error("--bundle is required (or use --check-receipt / --selftest)")
     key = resolve_framer_key(args.key_file)
     bundle_path = Path(args.bundle)
     workdir = Path(args.workdir).resolve() if args.workdir else bundle_path.resolve().parent
