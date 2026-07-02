@@ -29,6 +29,18 @@ python3 scripts/check-version-consistency.py --tag vX.Y.Z  # the tag must match 
 CI runs this on every push/PR (manifest ↔ CHANGELOG) and on every `v*` tag (tag ↔ version). A new
 release means: bump `.claude-plugin/plugin.json`, add the `CHANGELOG.md` section, **then** tag.
 
+## Docs rot-radar (enforced in CI)
+A sibling check to version consistency above: README.md/SECURITY.md prose must not silently drift
+from shipped reality — the exact bug class that let the `@v2.0.0` quickstart pin a tag that
+predated its own code, and let README call the keyed-HMAC seal future "(v1.1)" work after it had
+already shipped (see `CHANGELOG.md`'s `[2.1.0]` "### Fixed" section):
+```bash
+python3 scripts/looptimal-docs-check.py    # every README @vX.Y.Z pin == top CHANGELOG version,
+                                            # and no shipped-feature is still called "planned"
+```
+CI runs this on every push/PR. Run it before tagging too — a stale pin or forward-reference phrase
+must be fixed before the tag, not caught after.
+
 ## Offline gates (run from a clean tree)
 ```bash
 python3 -m py_compile scripts/*.py

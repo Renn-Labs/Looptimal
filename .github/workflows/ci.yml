@@ -88,6 +88,21 @@ jobs:
             python3 scripts/check-version-consistency.py
           fi
 
+  docs-check:
+    name: "docs-check (doc rot-radar: stale version pins + shipped-but-still-planned prose)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Sibling to version-consistency above: that job guards plugin.json/CHANGELOG/tag
+      # agreement; this one guards README.md/SECURITY.md prose against two specific ways it
+      # went stale in this repo's own history (see CHANGELOG.md's [2.1.0] "### Fixed" section).
+      - name: docs match shipped reality
+        shell: bash
+        run: python3 scripts/looptimal-docs-check.py
+
   no-network-imports:
     name: no-network-imports (zero-network-calls regression guard)
     runs-on: ubuntu-latest

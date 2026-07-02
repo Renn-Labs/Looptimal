@@ -18,17 +18,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import read_plugin_version  # noqa: E402
+from _common import read_changelog_top_version, read_plugin_version  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / ".claude-plugin" / "plugin.json"
 CHANGELOG = ROOT / "CHANGELOG.md"
-_SEMVER = re.compile(r"^\[(\d+\.\d+\.\d+)\]")  # "## [2.0.0] — ..." -> 2.0.0
 
 
 def _plugin_version() -> str:
@@ -41,13 +39,13 @@ def _plugin_version() -> str:
 
 
 def _changelog_top_version() -> str:
-    for line in CHANGELOG.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line.startswith("## "):
-            m = _SEMVER.match(line[3:].strip())
-            if m:
-                return m.group(1)
-    sys.exit(f"FAIL: no '## [x.y.z]' release heading found in {CHANGELOG.relative_to(ROOT)}")
+    # Delegates to the shared _common.read_changelog_top_version so the "current version" read
+    # lives in exactly one place, same pattern as _plugin_version() above — this guard and
+    # looptimal-docs-check.py cannot drift on how the top CHANGELOG version is derived.
+    try:
+        return read_changelog_top_version(CHANGELOG)
+    except (OSError, ValueError) as exc:
+        sys.exit(f"FAIL: {exc}")
 
 
 def main() -> int:
