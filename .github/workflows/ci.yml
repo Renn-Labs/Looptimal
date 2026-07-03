@@ -69,6 +69,37 @@ jobs:
       - run: pip install pyyaml
       - run: python3 scripts/loopprint-lint.py examples/*/loop-spec.yaml examples/campaign-*/campaign-spec.yaml examples/campaign-*/*/loop-spec.yaml
 
+  library-lint:
+    name: library-lint (first-party loop specs + verifier rot gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python3 scripts/loopprint-lint.py library/*/loop-spec.yaml
+      - name: smoke-run library verifiers (exit 0–125 = real verdict; >125 = rot)
+        shell: bash
+        run: |
+          set -euo pipefail
+          rc=0
+          shopt -s nullglob
+          for v in library/*/verify.sh; do
+            echo "==> smoke: $v" >&2
+            set +e
+            bash "$v" >/dev/null 2>&1
+            ec=$?
+            set -e
+            if [ "$ec" -gt 125 ]; then
+              echo "FAIL: $v could not execute (exit $ec > 125)" >&2
+              rc=1
+            else
+              echo "ok: $v executed (exit $ec)" >&2
+            fi
+          done
+          exit $rc
+
   version-consistency:
     name: version-consistency
     runs-on: ubuntu-latest

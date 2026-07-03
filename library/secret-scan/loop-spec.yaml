@@ -1,0 +1,41 @@
+schema_version: 1
+slug: secret-scan
+created: 2026-07-02
+pattern: spec-driven
+
+catalog:
+  attribution: Renn Labs
+  license: MIT
+
+goal: >
+  The repository contains no committed secrets or high-entropy credentials in tracked files.
+
+state:
+  path: loops/secret-scan/state.md
+  records:
+    - findings from verify.sh this iteration
+    - remediation attempted
+    - verifier result
+    - next file or pattern to address
+
+verifier:
+  kind: lint
+  command: "bash verify.sh"
+  green_means: "no committed secrets present"
+
+stop:
+  success: "verifier GREEN (secret scan clean)"
+  max_iterations: 5
+  budget:
+    tokens: null
+    wall_clock_minutes: 30
+  halt_file: loops/secret-scan/HALT
+
+autonomy: checkpoint
+human_checkpoints:
+  - "rotate any exposed credentials before declaring the loop done"
+
+integrations:
+  oh_my_claudecode: false
+  subagent_isolation: false
+  heavy_orchestrator: false

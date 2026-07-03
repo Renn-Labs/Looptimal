@@ -205,3 +205,26 @@ fingerprints:
     distinct call sites, same verification-not-poisoning pattern. Both independently
     adversarially reviewed 2026-07-02 (impl + confirmation pass for each of --receipt and
     --check-receipt, 4 review passes total across both).'
+- hash: sha256:820968e4cfabb719
+  rule_id: AST4
+  file: loopprint-library.py
+  reason: 'Reviewed by hand + independent Opus security review 2026-07-02: one of three
+    list-form subprocess.run call sites in scripts/loopprint-library.py -- git rev-parse
+    --show-toplevel (resolve the consumer repo root), bash -n (syntax-gate a verify.sh
+    before smoke-run), and bash verify.sh (smoke-run the loop gate). All use shell=False
+    with explicit list args and no user-controlled shell string. The independent review
+    confirmed the subprocess use is safe and separately found+closed a slug path-traversal
+    issue (now validated: slug must be a single path segment, dest stays under --dest).
+    Not a real injection/shell issue. Re-triage if the subprocess call sites change.'
+- hash: sha256:ee55e54e0afa71e5
+  rule_id: AST4
+  file: loopprint-library.py
+  reason: 'Reviewed 2026-07-02: second of the three safe list-form subprocess.run call
+    sites in loopprint-library.py (see the companion AST4 entry above). shell=False,
+    explicit args, no shell string; independently security-reviewed.'
+- hash: sha256:ef43a3d0be531645
+  rule_id: AST4
+  file: loopprint-library.py
+  reason: 'Reviewed 2026-07-02: third of the three safe list-form subprocess.run call
+    sites in loopprint-library.py (see the companion AST4 entry above). shell=False,
+    explicit args, no shell string; independently security-reviewed.'
