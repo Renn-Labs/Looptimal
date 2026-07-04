@@ -51,6 +51,11 @@ def _as_dict(v) -> dict:
     return v if isinstance(v, dict) else {}
 
 
+def _positive_int(v) -> int | None:
+    """Return v as a positive int, rejecting bool (a subclass of int) and malformed values."""
+    return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else None
+
+
 # Commands that "pass" without testing anything — as useless as self-grading.
 TRIVIAL_GATE = {"", "true", ":", "exit 0", "exit0", "/bin/true"}
 
@@ -117,15 +122,13 @@ def lint_spec(spec: dict) -> list[str]:
     # critic-panel quorum config validation (only when kind == "critic-panel").
     if v.get("kind") == "critic-panel":
         panel = _as_dict(v.get("panel"))
-        n = panel.get("n")
-        qk = panel.get("quorum_k")
+        n = _positive_int(panel.get("n"))
+        qk = _positive_int(panel.get("quorum_k"))
         thr = panel.get("threshold")
-        n_ok = isinstance(n, int) and not isinstance(n, bool) and n > 0
-        if not n_ok:
+        if n is None:
             f.append("verifier.panel.n: must be a positive integer (required for kind: critic-panel).")
         else:
-            qk_ok = isinstance(qk, int) and not isinstance(qk, bool) and qk > 0
-            if not qk_ok:
+            if qk is None:
                 f.append("verifier.panel.quorum_k: must be a positive integer (required for kind: critic-panel).")
             elif qk > n:
                 f.append(f"verifier.panel.quorum_k: {qk} > panel.n ({n}) — quorum cannot exceed the number of critics.")
@@ -196,8 +199,7 @@ def lint_critic_panel_dir(spec_path: str, spec: dict) -> tuple:
         return [], []
 
     panel = _as_dict(v.get("panel"))
-    n = panel.get("n")
-    n_ok = isinstance(n, int) and not isinstance(n, bool) and n > 0
+    n = _positive_int(panel.get("n"))
 
     blocking: list = []
     advisory: list = []
@@ -213,7 +215,7 @@ def lint_critic_panel_dir(spec_path: str, spec: dict) -> tuple:
         critic_names = []
 
     # BLOCKING: fewer than panel.n critics present (skip if n invalid — S2 already flags it).
-    if n_ok and len(critic_names) < n:
+    if n is not None and len(critic_names) < n:
         blocking.append(
             f"critic-panel: found {len(critic_names)} critic-*.sh but panel.n={n} "
             f"— need {n} distinct critic scripts."

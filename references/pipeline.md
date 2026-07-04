@@ -16,7 +16,7 @@ Harness-decoupled meta-orchestrator protocol. Each stage produces durable artifa
 Lint entrypoints (resolve from binding or skill `scripts/`):
 - `contract-lint` — Stage 0 gate; validates acceptance suite shape and oracle bindings
 - `loopprint-lint` — Stage 2 gate; validates each `loop-spec.yaml`
-- `looptimal-lint` — Stage 3+ gate; validates full run package
+- `looptimal-lint` — Stage 3+ gate; validates the full run package (`mission.yaml` for mission routes; loop package when present)
 
 ---
 
@@ -92,7 +92,9 @@ auto-accepted.
 
 ## Stage 1 — Analyze
 
-**Job:** Produce a Capability Manifest — domains, integration map, risks, dependencies, verifier surfaces. Delegate deep definition to **esat** when stakes warrant tri-model stress-test.
+**Job:** Produce a Capability Manifest and local capability readiness inventory — domains, integration map, risks,
+dependencies, verifier surfaces, and the concrete skills/plugins/connectors/MCPs/agents/data sources this local
+instance can use. Delegate deep definition to **esat** when stakes warrant tri-model stress-test.
 
 ### Inputs
 - Sealed `acceptance-suite.yaml` + `scope-registry.yaml` (read-only)
@@ -107,16 +109,24 @@ auto-accepted.
    - Integration edges (upstream/downstream, blocking externals)
    - Known risks and failure history
    - Oracle surfaces available vs gaps (missing probes → Frame gap or Stage 2 REJECT)
-3. **Integration map** — directed graph of systems, teams, deploy order, data flows, shared credentials.
-4. **Risk register** — classify: env drift, partial completion, silent failure, flaky verifier, blast-radius, goal drift, context rot, external blockers.
-5. **Dependency ledger** — human merges, third-party SLAs, credentials provisioning, ephemeral env needs.
-6. **Optional esat delegation** — for high-stakes objectives: tri-model stress-test of definition, scope, and oracle adequacy; merge findings into manifest (esat does not replace Frame or Verify-outcome).
-7. **Manifest completeness check** — every sealed criterion has a domain owner and at least one integration edge documented.
+3. **Local capability readiness inventory** — inspect the operating instance before route selection:
+   - Installed skills and plugin skills relevant to the objective
+   - Native agent roles and dynamic spin-up surfaces
+   - MCP/connectors and connector readiness (configured, available but unauthenticated, absent, or unsafe for this run)
+   - Repo-local scripts, CLIs, profiles, and reusable loop/starters
+   - Data sources and write targets, with authority level and credential class
+   - Candidate execution drivers: Ultragoal/Autopilot, Team, explicit Ralph fallback, direct single-pass, campaign composition, or loop blueprint
+4. **Integration map** — directed graph of systems, teams, deploy order, data flows, shared credentials.
+5. **Risk register** — classify: env drift, partial completion, silent failure, flaky verifier, blast-radius, goal drift, context rot, external blockers.
+6. **Dependency ledger** — human merges, third-party SLAs, credentials provisioning, ephemeral env needs.
+7. **Optional esat delegation** — for high-stakes objectives: tri-model stress-test of definition, scope, and oracle adequacy; merge findings into manifest (esat does not replace Frame or Verify-outcome).
+8. **Manifest completeness check** — every sealed criterion has a domain owner and at least one integration edge documented.
 
 ### Outputs / artifacts
 | Artifact | Purpose |
 |----------|---------|
 | `capability-manifest.yaml` | Domains, experts, tools, gaps |
+| `local-capability-inventory.yaml` | Local skills/plugins/connectors/MCPs/agents/data sources and readiness |
 | `integration-map.mmd` or `.yaml` | System/team/data-flow graph |
 | `risk-register.yaml` | Classified risks with severity |
 | `dependency-ledger.yaml` | External blockers and lead times |
@@ -125,6 +135,7 @@ auto-accepted.
 
 ### GATE → Stage 2
 - [ ] Capability Manifest covers **all material domains** referenced by sealed criteria
+- [ ] Local capability inventory records available skills/plugins/connectors/MCPs/agents/data sources and readiness gaps
 - [ ] Every integration edge crossing team/repo/env boundary is documented
 - [ ] Every sealed criterion maps to ≥1 domain with resolvable oracle surface (or logged Frame gap with user ack)
 - [ ] Risk register includes blast-radius and silent-failure classes
@@ -132,35 +143,48 @@ auto-accepted.
 
 ---
 
-## Stage 2 — Design-loop
+## Stage 2 — Design-loop / Route
 
-**Job:** Select loop archetype or **REJECT**. Produce or delegate runnable loop blueprint when appropriate.
+**Job:** Select the right execution route. Produce or delegate a reusable loop blueprint when appropriate; route
+one-time work to Mission / Goal Run or single-pass when that is the honest shape; hard **REJECT** only when no
+external verifier/human gate can make the work honest.
 
-### Archetypes
-| Archetype | When | Stop condition |
+### Routes
+| Route | When | Stop condition |
 |-----------|------|----------------|
-| **Task** | Bounded delivery, terminal outcome | Outcome verifier GREEN once |
+| **Mission / Goal Run** | One-time objective that needs bounded iteration until a verifier accepts it | Outcome verifier GREEN once or budget stop |
+| **Single Verified Pass** | One-time objective with a verifier but no useful retry loop | Outcome verifier GREEN once |
+| **Task** | Bounded delivery that is reusable as a loop starter/profile | Outcome verifier GREEN once |
 | **Recurring** | Scheduled freshness / hygiene | Per-run outcome + schedule in spec |
 | **Supervised** | Autonomous within guardrails | Human gates on irreversibles; outcome per episode |
 | **Persistent-ratchet** | Each pass strictly improves outcome metric | Ratchet monotonicity + re-Frame cadence |
 | **Orchestration** | Multi-actor / multi-repo coordination | ∀ registry members at outcome |
-| **REJECT** | Not-a-loop, meta-loop, judgment-only, symptom-only | Honest alternative issued; pipeline stops |
+| **Hard REJECT** | No verifier/human gate, meta-loop, self-grading, judgment-only without rubric/critics, symptom-only | Honest alternative issued; pipeline stops |
 
 ### Inputs
-- `capability-manifest.yaml`, `integration-map`, sealed suite (read-only)
+- `capability-manifest.yaml`, `local-capability-inventory.yaml`, `integration-map`, sealed suite (read-only)
 - `objective.md`, `risk-register.yaml`
 - LoopPrint templates (if blueprint needed)
 
 ### Work performed
-1. **Not-a-loop test** — one-shot Q&A, single edit, explain-error, meta-loop ("verify Looptimal with Looptimal"), judgment-only goals → **REJECT** with honest alternative.
-2. **Archetype selection** — pick one archetype; document why others were ruled out.
-3. **Symptom guard** — if success metric is proxy-only (coverage %, complexity score, CI green once) → REJECT or require re-Frame with behavioral anchor.
-4. **Loop blueprint** — when runnable iteration is needed, delegate to **LoopPrint** (or hand-author) producing under `loops/<slug>/`:
+1. **Route test** — separate reusable-loop worthiness from outcome-orchestration worthiness:
+   - Recurring or reusable starter pattern → loop archetype.
+   - Non-recurring but verifier-backed and iteration-worthy → **Mission / Goal Run**.
+   - Non-recurring with verifier but no useful retry loop → **Single Verified Pass**.
+   - Trivial one-shot Q&A, tiny edit, explain-error → direct answer or single-pass only when proof is required.
+   - Meta-loop ("verify Looptimal with Looptimal"), self-grading, no verifier/human gate, or symptom-only goals → **Hard REJECT** with honest alternative.
+2. **Execution driver selection** — use the local capability inventory to choose Ultragoal/Autopilot, Team,
+   explicit Ralph fallback, campaign composition, single-pass, or loop blueprint. Record unavailable/missing
+   connectors as readiness gaps instead of pretending the route can run.
+3. **Archetype selection** — for reusable loops, pick one archetype; document why others were ruled out. For
+   mission/single-pass routes, document why no reusable loop blueprint is being produced.
+4. **Symptom guard** — if success metric is proxy-only (coverage %, complexity score, CI green once) → hard REJECT or require re-Frame with behavioral anchor.
+5. **Loop blueprint** — when reusable runnable iteration is needed, delegate to **LoopPrint** (or hand-author) producing under `loops/<slug>/`:
    - `loop-spec.yaml`, `verify.sh`, `maker.sh`, `run-this-loop.sh`, `state.md`, `safety-checklist.md`
    - Loop verifier hooks **iteration gates**; sealed suite hooks **outcome gate** (Stage 6). Do not collapse.
-5. **Meta-loop rejection** — no criterion where the loop grades its own orchestration; no auto-merge on self-reported GREEN.
-6. **Re-Frame cadence** — for Persistent-ratchet / long-horizon: specify periodic `contract_hash` re-seal schedule in `loop-design.md`.
-7. **loopprint-lint** — run on every `loop-spec.yaml`:
+6. **Meta-loop rejection** — no criterion where the loop grades its own orchestration; no auto-merge on self-reported GREEN.
+7. **Re-Frame cadence** — for Persistent-ratchet / long-horizon: specify periodic `contract_hash` re-seal schedule in `loop-design.md`.
+8. **loopprint-lint** — run on every `loop-spec.yaml`:
    - External verifier (maker ≠ checker)
    - Safety limit present
    - No self-grading verifier
@@ -169,16 +193,18 @@ auto-accepted.
 ### Outputs / artifacts
 | Artifact | Purpose |
 |----------|---------|
-| `loop-design.md` | Archetype choice, rationale, re-Frame cadence |
+| `route.md` | Route choice, driver selection, readiness gaps, rationale |
+| `loop-design.md` | Archetype choice, rationale, re-Frame cadence when a reusable loop is produced |
 | `loop-spec.yaml` (+ LoopPrint package) | Runnable loop blueprint when applicable |
-| `reject.md` (if REJECT) | Reason + honest alternative (single-pass, human-gated, LoopPrint-only) |
+| `reject.md` (if hard REJECT) | Reason + honest alternative (human-reviewed, human-gated, re-Frame, direct answer) |
 | `loopprint-lint.txt` | Per-spec lint transcript |
 
-### GATE → Stage 3 (or STOP on REJECT)
-- [ ] Archetype chosen and documented **OR** REJECT issued with alternative
-- [ ] On REJECT: user acknowledged; pipeline stops unless user reframes objective
-- [ ] Every `loop-spec.yaml` passes **loopprint-lint GREEN**
-- [ ] Iteration verifier ≠ outcome verifier (separate hooks documented)
+### GATE → Stage 3 (or STOP on hard REJECT)
+- [ ] Route chosen and documented in `route.md` **OR** hard REJECT issued with alternative
+- [ ] On hard REJECT: user acknowledged; pipeline stops unless user reframes objective
+- [ ] Every generated `loop-spec.yaml` passes **loopprint-lint GREEN**
+- [ ] Iteration verifier ≠ outcome verifier (separate hooks documented) when a loop route exists
+- [ ] Mission / Goal Run routes name the execution driver, state artifact, verifier, stop/budget, and readiness gaps
 - [ ] No meta-loop shape; safety limits set
 
 ---
@@ -188,7 +214,7 @@ auto-accepted.
 **Job:** Build consensus task graph with per-task acceptance hooks, blast-radius tags, rollback notes, budgets.
 
 ### Inputs
-- Sealed suite + `loop-design.md` + Capability Manifest
+- Sealed suite + `route.md` + `loop-design.md` when present + Capability Manifest
 - `integration-map`, `dependency-ledger`, `risk-register`
 - Loop blueprint (if any)
 
@@ -200,7 +226,11 @@ auto-accepted.
 5. **Expert resolution** — each node lists required capability; must resolve to agent/persona + tool set via binding profile (no orphan tasks).
 6. **Budget & stop** — token/time/iteration limits, scope fence tied to `contract_hash`.
 7. **Resumability** — checkpoint fields per node: `pending|in_progress|blocked|done|failed` + resume command.
-8. **looptimal-lint** — run on full `loops/<slug>/` package:
+8. **Package assembly + looptimal-lint** — assemble the route-appropriate run package, then lint it:
+   - Mission / Goal Run → `mission.yaml`, `task-graph.yaml`, `route.md`, `execute-scope.yaml`, sealed suite refs.
+   - Reusable loop → full `loops/<slug>/` package plus `loop-design.md`.
+   - Single verified pass → no Stage 3 package; it already branched to the single-pass Degrade path.
+   - Run `scripts/looptimal-lint.py <state_dir>/mission.yaml` for mission packages or the binding-equivalent full package gate for reusable loops.
    - Writable verifier inputs → RED
    - Symptom-only criteria → RED
    - Missing oracle binding → RED
@@ -215,6 +245,8 @@ auto-accepted.
 | `task-graph.yaml` | Nodes, edges, tags, hooks |
 | `traceability-matrix.yaml` | criterion_id ↔ task_id mapping |
 | `blast-radius-checkpoints.yaml` | Pre-action gates for irreversibles |
+| `mission.yaml` | Mission package for mission/goal-run routes; references sealed contract and task lanes |
+| `execute-scope.yaml` | Files/repos/actions permitted under this `contract_hash` |
 | `plan-consensus.md` | Brief rationale; dissent notes if any |
 | `looptimal-lint.txt` | GREEN/RED transcript |
 
@@ -224,6 +256,7 @@ auto-accepted.
 - [ ] Every node hooks to ≥1 sealed criterion
 - [ ] Every hard-irreversible node has pre-action checkpoint + rollback note
 - [ ] Every node capability resolves to agent + tools (no TBD)
+- [ ] Mission / Goal Run routes have `mission.yaml` and `looptimal-lint` GREEN before Simulate
 - [ ] Safety limits and scope fence recorded
 - [ ] `execute-scope.yaml` pins files/repos/actions allowed under this `contract_hash`
 
@@ -234,10 +267,10 @@ auto-accepted.
 **Job:** War-game the plan before any autonomous Execute. Roll forward, pre-mortem, harden. See `references/simulate.md` for full protocol.
 
 ### Inputs
-- `task-graph.yaml`, sealed suite, `loop-design.md`
+- `task-graph.yaml`, sealed suite, `route.md`, `loop-design.md` when present
 - `risk-register.yaml`, `blast-radius-checkpoints.yaml`
 - `capability-manifest.yaml`, `integration-map`
-- Loop blueprint (if any)
+- Mission package or loop blueprint (route-dependent)
 
 ### Work performed
 Execute the four-phase Simulate protocol (path generation → rollout → pre-mortem → plan-hardening). Produce `simulation.md` and `plan-hardening.md`. Apply hardening deltas to plan and suite; if suite changes, re-seal → new `contract_hash` → user ack.
@@ -429,7 +462,7 @@ Present: objective, `contract_hash`, archetype, irreversibles list, open externa
 | `objective_hash` matches + prior incomplete | Resume last incomplete stage |
 | `objective_hash` changed materially | Re-Frame (new `contract_hash`) |
 | `contract_hash` changed mid-run | Re-Plan minimum; re-Simulate if plan structure changed |
-| Prior REJECT | Fresh Design-loop after re-Frame |
+| Prior hard REJECT | Fresh Design-loop / Route after re-Frame |
 | FAIL at Stage 6 with `fix-and-resume` | Resume Execute at failed node; Stage 6 re-run |
 
 ---
@@ -437,10 +470,11 @@ Present: objective, `contract_hash`, archetype, irreversibles list, open externa
 ## Stage transition diagram
 
 ```
-0 Frame ──contract-lint GREEN──► 1 Analyze ──manifest complete──► 2 Design-loop
+0 Frame ──contract-lint GREEN──► 1 Analyze ──manifest + readiness complete──► 2 Design-loop / Route
                                                                     │
-                                    REJECT ──► STOP (honest alt)    │
-                                    loopprint-lint GREEN            ▼
+                                    hard REJECT ──► STOP (honest alt)
+                                    route chosen + loopprint-lint GREEN when loop blueprint exists
+                                                                    ▼
                                                               3 Plan ──looptimal-lint GREEN──► 4 Simulate
                                                                                                       │
                                                                                     hard-sev mitigated/residual acked

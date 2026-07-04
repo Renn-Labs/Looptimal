@@ -86,7 +86,11 @@ The most valuable thing Looptimal does is sometimes tell you **not** to build a 
 3. **The budget absorbs retries** — iterating is cheaper than getting it right once by hand.
 4. **The agent can run what it writes** — there's a real feedback signal, not a human in every cycle.
 
-If any fail, the honest answer is a single high-quality pass, not a loop. The metric that matters is **cost-per-accepted-change**, not tokens spent.
+If recurrence fails, the honest answer is **not** always "stop." It means "not a reusable loop blueprint yet."
+A one-time objective with a real verifier can still route to a mission / goal run, using the same discipline:
+durable state, bounded retries, maker != checker, and a stop condition. If retries are not useful, route to a
+single verified pass. If no verifier or human checkpoint exists, reject the automation claim. The metric that
+matters is **cost-per-accepted-change**, not tokens spent.
 
 ## Where this fits
 
@@ -112,8 +116,8 @@ prove what it claims when it's done — CI for agent done-claims, not another wa
 | # | Stage | What it does |
 |-|-|-|
 | 0 | **Frame** | Turn the objective into a hash-pinned, **sealed** acceptance suite; every criterion asserts an outcome (not a symptom) and binds a domain oracle. |
-| 1 | **Analyze** | Produce a Capability Manifest — the domains, risks, and dependencies the work touches. |
-| 2 | **Design-loop** | Run the loop-design wizard: pick the archetype (Task / Recurring / Supervised / Persistent-ratchet / Orchestration), or **REJECT** if it isn't a loop. |
+| 1 | **Analyze** | Produce a Capability Manifest and local capability readiness inventory — domains, risks, dependencies, skills/plugins/connectors/MCPs/agents/data sources. |
+| 2 | **Design-loop / Route** | Run the loop-design wizard or route the objective: reusable loop, one-time mission / goal run, single verified pass, human-gated workflow, or hard **REJECT** when no honest verifier exists. |
 | 3 | **Plan** | Build a consensus task graph with per-task acceptance tied to the sealed suite. |
 | 4 | **Simulate** | War-game the loop forward N steps, pre-mortem the failure modes, harden the plan. |
 | — | **Human GO** | Explicit approval to execute. No GO, no Execute. |
@@ -201,7 +205,7 @@ From the **Design-loop wizard** (Stage 2 / design fast-path), a self-contained r
 - `safety-checklist.md` — human checkpoints + budget limits + checker identity
 - `flow.mmd` — Mermaid diagram of the loop
 
-From the **full pipeline**, additionally: `acceptance-suite.yaml` + `acceptance-suite.sha256`, Capability Manifest, consensus task graph, Simulate report, and evidence bundle.
+From the **full pipeline**, additionally: `acceptance-suite.yaml` + `acceptance-suite.sha256`, Capability Manifest, `local-capability-inventory.yaml`, `route.md`, `mission.yaml`, consensus task graph, Simulate report, and evidence bundle.
 
 Tooling: `loopprint-lint.py` gates the loop spec; `loopprint-ls.py` reports health of every loop in the repo (rot radar) — `--update-index` opts a repo's loops into an append-only, local-only `~/.loopprint/index.jsonl`, and `loopprint-ls.py --global` reads it back ranked by cost-per-accepted-change across every repo that's opted in, flagging ROTTEN loops; deleting the index loses nothing, it's a rebuildable pointer cache; `loopprint-report.py` computes cost-per-accepted-change from `metrics.jsonl`; `loopprint-skillify.py` promotes a GREEN loop to a reusable skill. Verifier recipes: [`templates/verifier-library.yaml`](templates/verifier-library.yaml). Schema contract: [`references/schema.md`](references/schema.md).
 

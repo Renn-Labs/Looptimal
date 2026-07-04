@@ -48,6 +48,31 @@ def _init_git_repo(path: Path, files: dict[str, str] | None = None) -> None:
     subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
 
 
+def test_consumer_repo_root_finds_parent_git_dir(tmp_path):
+    repo = tmp_path / "repo"
+    _init_git_repo(repo, {"README.md": "# repo\n"})
+    nested = repo / "a" / "b"
+    nested.mkdir(parents=True)
+
+    assert lib._consumer_repo_root(nested) == repo.resolve()
+
+
+def test_consumer_repo_root_falls_back_outside_git_repo(tmp_path):
+    plain = tmp_path / "plain" / "nested"
+    plain.mkdir(parents=True)
+
+    assert lib._consumer_repo_root(plain) == plain.resolve()
+
+
+def test_consumer_repo_root_accepts_git_file_marker(tmp_path):
+    repo = tmp_path / "worktree-like"
+    nested = repo / "src"
+    nested.mkdir(parents=True)
+    (repo / ".git").write_text("gitdir: /tmp/example\n", encoding="utf-8")
+
+    assert lib._consumer_repo_root(nested) == repo.resolve()
+
+
 def _write_minimal_loop(loop_dir: Path, *, slug: str, verify_body: str) -> None:
     spec = {
         "schema_version": 1,
@@ -146,7 +171,7 @@ def test_verify_red_on_scratch_repo_with_planted_secret(tmp_path):
     repo = tmp_path / "dirty"
     _init_git_repo(repo, {
         "README.md": "# dirty\n",
-        "leak.txt": "aws_key = AKIAIOSFODNN7EXAMPLE\n",
+        "leak.txt": f"aws_key = {_FAKE_AWS_ACCESS_KEY_ID}\n",
     })
     p = _run(repo, "verify", "secret-scan")
     assert p.returncode == 0, p.stderr + p.stdout
@@ -158,7 +183,7 @@ def test_verify_red_when_secret_shares_line_with_url_comment(tmp_path):
     _init_git_repo(repo, {
         "README.md": "# dirty\n",
         "leak.txt": (
-            "aws_key = AKIAIOSFODNN7EXAMPLE  # see https://github.com/example/docs\n"
+            f"aws_key = {_FAKE_AWS_ACCESS_KEY_ID}  # see https://github.com/example/docs\n"
         ),
     })
     p = _run(repo, "verify", "secret-scan")
@@ -168,6 +193,7 @@ def test_verify_red_when_secret_shares_line_with_url_comment(tmp_path):
 
 _SHA256 = "f51f8b540b80c0afe446d5b25d28f9886ce3220e2813b71bc9cc1e1b16ade6fe"
 _GIT_COMMIT = "326a2b489411a20ed742ff13701be39ba00063c8"
+_FAKE_AWS_ACCESS_KEY_ID = "AKIA" + "IOSFODNN7EXAMPLE"
 _SSH_PUBKEY = (
     "user@example.com ssh-ed25519 "
     "AAAAC3NzaC1lZDI1NTE5AAAAIGMQu4u13T0ZCz00OGvcEXFk4zVJcVwB+gIaJD7Qs1El"
@@ -196,7 +222,7 @@ def test_verify_akia_with_url_comment_stays_red(tmp_path):
     _init_git_repo(repo, {
         "README.md": "# dirty\n",
         "leak.txt": (
-            "AKIAIOSFODNN7EXAMPLE  # https://github.com/example/docs\n"
+            f"{_FAKE_AWS_ACCESS_KEY_ID}  # https://github.com/example/docs\n"
         ),
     })
     p = _run(repo, "verify", "secret-scan")
@@ -218,7 +244,7 @@ def test_install_red_on_arrival_with_planted_secret(tmp_path):
     consumer = tmp_path / "consumer-dirty"
     _init_git_repo(consumer, {
         "README.md": "# app\n",
-        "config.env": "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n",
+        "config.env": f"AWS_ACCESS_KEY_ID={_FAKE_AWS_ACCESS_KEY_ID}\n",
     })
     p = _run(REPO, "install", "secret-scan", "--dest", str(consumer))
     assert p.returncode == 0, p.stderr + p.stdout

@@ -55,20 +55,13 @@ def _script_repo() -> Path:
 
 
 def _consumer_repo_root(start: Path) -> Path:
-    """git rev-parse --show-toplevel of start, else start resolved."""
-    try:
-        r = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=str(start),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if r.returncode == 0 and r.stdout.strip():
-            return Path(r.stdout.strip())
-    except (OSError, subprocess.TimeoutExpired):
-        pass
-    return start.resolve()
+    """Nearest git worktree root above start, else start resolved."""
+    resolved = start.resolve()
+    cur = resolved if resolved.is_dir() else resolved.parent
+    for candidate in (cur, *cur.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return resolved
 
 
 def _library_roots(dir_arg: str | None = None) -> list[Path]:

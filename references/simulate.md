@@ -22,11 +22,13 @@ Catch before Execute:
 | `task-graph.yaml` | yes |
 | `sealed/acceptance-suite.yaml` + `contract_hash` | yes (read-only) |
 | `scope-registry.yaml` | yes |
-| `loop-design.md` | yes |
+| `route.md` | yes |
+| `loop-design.md` | only for reusable-loop routes |
 | `risk-register.yaml` | yes |
 | `blast-radius-checkpoints.yaml` | yes |
 | `capability-manifest.yaml` + `integration-map` | yes |
-| `loop-spec.yaml` / LoopPrint package | if iteration loop |
+| `mission.yaml` | for mission / goal-run routes |
+| `loop-spec.yaml` / LoopPrint package | for reusable-loop routes |
 | Binding profile | yes |
 
 ## Outputs
