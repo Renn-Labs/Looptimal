@@ -5,7 +5,7 @@ import importlib.util
 import json
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
@@ -322,3 +322,27 @@ def test_classify_verify_exit():
     assert lib._classify_verify_exit(125) == "RED"
     assert lib._classify_verify_exit(126) == "CANT_EXECUTE"
     assert lib._classify_verify_exit(127) == "CANT_EXECUTE"
+
+
+def test_bash_path_converts_windows_drive_path_for_git_bash(monkeypatch):
+    monkeypatch.setattr(lib.sys, "platform", "win32")
+
+    assert lib._bash_path(
+        PureWindowsPath(r"D:\a\Looptimal\Looptimal\library\secret-scan\verify.sh")
+    ) == "/d/a/Looptimal/Looptimal/library/secret-scan/verify.sh"
+
+
+def test_bash_path_keeps_native_path_off_windows(monkeypatch):
+    monkeypatch.setattr(lib.sys, "platform", "linux")
+
+    assert lib._bash_path(PurePosixPath("/tmp/verify.sh")) == "/tmp/verify.sh"
+
+
+def test_bash_executable_uses_env_override_on_windows(monkeypatch, tmp_path):
+    bash = tmp_path / "bash.exe"
+    bash.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(lib.sys, "platform", "win32")
+    monkeypatch.setenv("BASH_EXE", str(bash))
+
+    assert lib._bash_executable() == str(bash)
