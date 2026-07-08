@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -146,25 +147,55 @@ def _classify_verify_exit(code: int) -> str:
     return "CANT_EXECUTE"
 
 
+def _bash_path(path: Path) -> str:
+    """Return a path form Git-Bash can open when Python is running on Windows."""
+    posix = path.as_posix()
+    if sys.platform != "win32":
+        return posix
+
+    if len(posix) >= 3 and posix[1:3] == ":/":
+        return f"/{posix[0].lower()}{posix[2:]}"
+    return posix
+
+
+def _bash_executable() -> str:
+    """Prefer Git Bash on Windows; WSL's bash.exe cannot open /d/... Git-Bash paths."""
+    if sys.platform != "win32":
+        return "bash"
+
+    candidates = [
+        os.environ.get("GIT_BASH"),
+        os.environ.get("BASH_EXE"),
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+    ]
+    for raw in candidates:
+        if raw and Path(raw).is_file():
+            return raw
+    return shutil.which("bash") or "bash"
+
+
 def _smoke_verify(loop_dir: Path, consumer_cwd: Path) -> tuple[int, str]:
     """Run verify.sh once with cwd = consumer repo root; classify per run-this-loop.sh --check."""
     verify_sh = loop_dir / "verify.sh"
     if not verify_sh.is_file():
         return 127, "CANT_EXECUTE"
+    bash = _bash_executable()
+    verify_arg = _bash_path(verify_sh)
     try:
         syntax = subprocess.run(
-            ["bash", "-n", str(verify_sh)],
-            capture_output=True,
-            text=True,
+            [bash, "-n", verify_arg],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             timeout=30,
         )
         if syntax.returncode != 0:
             return 126, "CANT_EXECUTE"
         r = subprocess.run(
-            ["bash", str(verify_sh)],
+            [bash, verify_arg],
             cwd=str(consumer_cwd),
-            capture_output=True,
-            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             timeout=300,
         )
         code = r.returncode

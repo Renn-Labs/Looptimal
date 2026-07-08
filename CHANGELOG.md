@@ -9,6 +9,12 @@ All notable changes to Looptimal are documented here. The format is based on
 > objective→outcome orchestrator. The repository was renamed `Renn-Labs/LoopPrint` →
 > `Renn-Labs/Looptimal` (old links redirect).
 
+## [2.2.0] — 2026-07-08
+
+### Added
+- Grouped `loopprint` console entry point for optional package installs, so `uvx --from git+... loopprint ls`
+  dispatches to the existing `scripts/loopprint-ls.py` implementation without changing the folder-skill path.
+
 ## [2.1.0] — 2026-07-01
 
 ### Added

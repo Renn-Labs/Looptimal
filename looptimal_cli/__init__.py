@@ -20,6 +20,16 @@ from pathlib import Path
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 
+_LOOPPRINT_SUBCOMMANDS = {
+    "detect": ("loopprint-detect", True),
+    "doctor": ("loopprint-doctor", True),
+    "lint": ("loopprint-lint", True),
+    "ls": ("loopprint-ls", True),
+    "report": ("loopprint-report", False),
+    "skillify": ("loopprint-skillify", True),
+    "update": ("loopprint-update", True),
+}
+
 
 def _load(script_stem: str):
     path = _SCRIPTS_DIR / f"{script_stem}.py"
@@ -40,6 +50,31 @@ def _run_with_argv(script_stem: str) -> None:
     """For scripts whose main(argv) explicitly takes sys.argv — replicates each
     script's own `if __name__ == "__main__":` call convention exactly."""
     raise SystemExit(_load(script_stem).main(sys.argv))
+
+
+def _print_loopprint_usage() -> None:
+    commands = ", ".join(sorted(_LOOPPRINT_SUBCOMMANDS))
+    print(
+        "usage: loopprint <command> [args...]\n"
+        f"commands: {commands}\n\n"
+        "Examples:\n"
+        "  loopprint ls\n"
+        "  loopprint lint examples/ci-triage/loop-spec.yaml\n"
+        "  loopprint doctor"
+    )
+
+
+def _run_script_with_args(script_stem: str, args: list[str], *, takes_argv: bool) -> None:
+    """Run a script as if its own console binary had received args."""
+    old_argv = sys.argv[:]
+    sys.argv = [script_stem, *args]
+    try:
+        module = _load(script_stem)
+        if takes_argv:
+            raise SystemExit(module.main(sys.argv))
+        raise SystemExit(module.main())
+    finally:
+        sys.argv = old_argv
 
 
 # --- looptimal-* (outcome-orchestration layer): main() takes no argument ---
@@ -65,6 +100,27 @@ def persona_promote() -> None:
 
 def frame_ingest() -> None:
     _run_no_arg("looptimal-frame-ingest")
+
+
+# --- grouped loopprint CLI: `loopprint ls`, `loopprint lint`, ... ---
+def loopprint() -> None:
+    args = sys.argv[1:]
+    if not args:
+        _print_loopprint_usage()
+        raise SystemExit(2)
+    if args[0] in {"-h", "--help"}:
+        _print_loopprint_usage()
+        raise SystemExit(0)
+
+    command = args[0]
+    try:
+        script_stem, takes_argv = _LOOPPRINT_SUBCOMMANDS[command]
+    except KeyError:
+        print(f"loopprint: unknown command {command!r}", file=sys.stderr)
+        _print_loopprint_usage()
+        raise SystemExit(2)
+
+    _run_script_with_args(script_stem, args[1:], takes_argv=takes_argv)
 
 
 # --- loopprint-* (loop-design/wizard layer): main(argv) takes sys.argv ---

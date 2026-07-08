@@ -52,15 +52,15 @@ def test_fails_on_a_reintroduced_stale_version_pin(tmp_path):
     _seed_minimal_repo(tmp_path)
     readme = tmp_path / "README.md"
     original = readme.read_text(encoding="utf-8")
-    assert "@v2.1.0" in original  # sanity: the repo still has the pin this test mutates
-    readme.write_text(original.replace("@v2.1.0", "@v2.0.0"), encoding="utf-8")
+    assert "@v2.2.0" in original  # sanity: the repo still has the pin this test mutates
+    readme.write_text(original.replace("@v2.2.0", "@v2.0.0"), encoding="utf-8")
 
     proc = _run(tmp_path)
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert "RED" in proc.stderr
     assert "README.md:30" in proc.stderr
     assert "@v2.0.0" in proc.stderr
-    assert "2.1.0" in proc.stderr  # names the current CHANGELOG version it should have matched
+    assert "2.2.0" in proc.stderr  # names the current CHANGELOG version it should have matched
 
 
 def test_passes_when_pin_matches_current_changelog_version(tmp_path):
