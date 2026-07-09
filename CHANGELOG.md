@@ -12,8 +12,9 @@ All notable changes to Looptimal are documented here. The format is based on
 ## [2.2.0] — 2026-07-08
 
 ### Added
-- Grouped `loopprint` console entry point for optional package installs, so `uvx --from git+... loopprint ls`
-  dispatches to the existing `scripts/loopprint-ls.py` implementation without changing the folder-skill path.
+- Grouped `looptimal` console entry point for optional package installs, so `uvx --from git+... looptimal ...`
+  dispatches to the existing `scripts/*.py` implementations without changing the folder-skill path. The
+  legacy `loopprint` command remains as a compatibility surface for the loop-spec tooling layer.
 
 ## [2.1.0] — 2026-07-01
 

@@ -27,6 +27,7 @@ Issues = "https://github.com/Renn-Labs/Looptimal/issues"
 # thin delegating wrapper (looptimal_cli/__init__.py) — the scripts/*.py
 # files remain the single source of truth.
 [project.scripts]
+looptimal = "looptimal_cli:looptimal"
 loopprint = "looptimal_cli:loopprint"
 looptimal-doctor = "looptimal_cli:doctor"
 looptimal-lint = "looptimal_cli:lint"
@@ -36,6 +37,7 @@ looptimal-frame-ingest = "looptimal_cli:frame_ingest"
 verify-outcome = "looptimal_cli:verify_outcome"
 loopprint-detect = "looptimal_cli:loopprint_detect"
 loopprint-doctor = "looptimal_cli:loopprint_doctor"
+loopprint-library = "looptimal_cli:loopprint_library"
 loopprint-lint = "looptimal_cli:loopprint_lint"
 loopprint-ls = "looptimal_cli:loopprint_ls"
 loopprint-skillify = "looptimal_cli:loopprint_skillify"

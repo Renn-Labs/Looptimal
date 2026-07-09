@@ -163,7 +163,8 @@ From a checkout that includes the grouped entry point, you can also smoke-test t
 tools without waiting for the next tag:
 
 ```bash
-uvx --from . loopprint ls
+uv run --with-editable . looptimal verify-outcome --selftest
+uv run --with-editable '.[yaml]' looptimal library search secret
 ```
 
 ## Verify it yourself

@@ -20,9 +20,20 @@ from pathlib import Path
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 
+_LOOPTIMAL_SUBCOMMANDS = {
+    "detect": ("looptimal-detect", False),
+    "doctor": ("looptimal-doctor", False),
+    "frame-ingest": ("looptimal-frame-ingest", False),
+    "library": ("loopprint-library", True),
+    "lint": ("looptimal-lint", False),
+    "persona-promote": ("looptimal-persona-promote", False),
+    "verify-outcome": ("verify-outcome", False),
+}
+
 _LOOPPRINT_SUBCOMMANDS = {
     "detect": ("loopprint-detect", True),
     "doctor": ("loopprint-doctor", True),
+    "library": ("loopprint-library", True),
     "lint": ("loopprint-lint", True),
     "ls": ("loopprint-ls", True),
     "report": ("loopprint-report", False),
@@ -41,6 +52,17 @@ def _load(script_stem: str):
     return module
 
 
+def _print_group_usage(binary: str, commands: dict[str, tuple[str, bool]], examples: list[str]) -> None:
+    joined = ", ".join(sorted(commands))
+    body = "\n".join(f"  {example}" for example in examples)
+    print(
+        f"usage: {binary} <command> [args...]\n"
+        f"commands: {joined}\n\n"
+        "Examples:\n"
+        f"{body}"
+    )
+
+
 def _run_no_arg(script_stem: str) -> None:
     """For scripts whose main() takes no argument (argparse reads sys.argv itself)."""
     raise SystemExit(_load(script_stem).main())
@@ -53,14 +75,28 @@ def _run_with_argv(script_stem: str) -> None:
 
 
 def _print_loopprint_usage() -> None:
-    commands = ", ".join(sorted(_LOOPPRINT_SUBCOMMANDS))
-    print(
-        "usage: loopprint <command> [args...]\n"
-        f"commands: {commands}\n\n"
-        "Examples:\n"
-        "  loopprint ls\n"
-        "  loopprint lint examples/ci-triage/loop-spec.yaml\n"
-        "  loopprint doctor"
+    _print_group_usage(
+        "loopprint",
+        _LOOPPRINT_SUBCOMMANDS,
+        [
+            "loopprint ls",
+            "loopprint library search secret",
+            "loopprint lint examples/ci-triage/loop-spec.yaml",
+            "loopprint doctor",
+        ],
+    )
+
+
+def _print_looptimal_usage() -> None:
+    _print_group_usage(
+        "looptimal",
+        _LOOPTIMAL_SUBCOMMANDS,
+        [
+            "looptimal verify-outcome --selftest",
+            "looptimal library search secret",
+            "looptimal lint mission.yaml",
+            "looptimal doctor",
+        ],
     )
 
 
@@ -102,6 +138,26 @@ def frame_ingest() -> None:
     _run_no_arg("looptimal-frame-ingest")
 
 
+def looptimal() -> None:
+    args = sys.argv[1:]
+    if not args:
+        _print_looptimal_usage()
+        raise SystemExit(2)
+    if args[0] in {"-h", "--help"}:
+        _print_looptimal_usage()
+        raise SystemExit(0)
+
+    command = args[0]
+    try:
+        script_stem, takes_argv = _LOOPTIMAL_SUBCOMMANDS[command]
+    except KeyError:
+        print(f"looptimal: unknown command {command!r}", file=sys.stderr)
+        _print_looptimal_usage()
+        raise SystemExit(2)
+
+    _run_script_with_args(script_stem, args[1:], takes_argv=takes_argv)
+
+
 # --- grouped loopprint CLI: `loopprint ls`, `loopprint lint`, ... ---
 def loopprint() -> None:
     args = sys.argv[1:]
@@ -134,6 +190,10 @@ def loopprint_doctor() -> None:
 
 def loopprint_lint() -> None:
     _run_with_argv("loopprint-lint")
+
+
+def loopprint_library() -> None:
+    _run_with_argv("loopprint-library")
 
 
 def loopprint_ls() -> None:

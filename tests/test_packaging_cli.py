@@ -36,6 +36,30 @@ def test_grouped_loopprint_ls_dispatches_to_existing_script(tmp_path, monkeypatc
     assert set(payload["scanned_roots"]) == {".omc/loops", "loops"}
 
 
+def test_grouped_loopprint_library_dispatches_to_existing_script(monkeypatch, capsys):
+    monkeypatch.chdir(REPO)
+    monkeypatch.setattr(sys, "argv", ["loopprint", "library", "search", "secret", "--json"])
+
+    with pytest.raises(SystemExit) as exc:
+        looptimal_cli.loopprint()
+
+    assert exc.value.code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert {row["slug"] for row in payload["loops"]} == {"secret-scan"}
+
+
+def test_grouped_looptimal_library_dispatches_to_existing_script(monkeypatch, capsys):
+    monkeypatch.chdir(REPO)
+    monkeypatch.setattr(sys, "argv", ["looptimal", "library", "search", "secret", "--json"])
+
+    with pytest.raises(SystemExit) as exc:
+        looptimal_cli.looptimal()
+
+    assert exc.value.code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert {row["slug"] for row in payload["loops"]} == {"secret-scan"}
+
+
 def test_grouped_loopprint_help_lists_subcommands(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["loopprint", "--help"])
 
@@ -45,8 +69,23 @@ def test_grouped_loopprint_help_lists_subcommands(monkeypatch, capsys):
     assert exc.value.code == 0
     out = capsys.readouterr().out
     assert "usage: loopprint <command> [args...]" in out
+    assert "library" in out
     assert "ls" in out
     assert "lint" in out
+
+
+def test_grouped_looptimal_help_lists_subcommands(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["looptimal", "--help"])
+
+    with pytest.raises(SystemExit) as exc:
+        looptimal_cli.looptimal()
+
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "usage: looptimal <command> [args...]" in out
+    assert "library" in out
+    assert "verify-outcome" in out
+    assert "doctor" in out
 
 
 def test_grouped_loopprint_unknown_command_exits_2(monkeypatch, capsys):
@@ -54,6 +93,16 @@ def test_grouped_loopprint_unknown_command_exits_2(monkeypatch, capsys):
 
     with pytest.raises(SystemExit) as exc:
         looptimal_cli.loopprint()
+
+    assert exc.value.code == 2
+    assert "unknown command 'wat'" in capsys.readouterr().err
+
+
+def test_grouped_looptimal_unknown_command_exits_2(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["looptimal", "wat"])
+
+    with pytest.raises(SystemExit) as exc:
+        looptimal_cli.looptimal()
 
     assert exc.value.code == 2
     assert "unknown command 'wat'" in capsys.readouterr().err
