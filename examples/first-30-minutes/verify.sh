@@ -6,11 +6,15 @@
 #   Exit 0 = package complete. This is NOT an accepted outcome receipt.
 #
 # With FIRST30_RUN_ROOT=<run root>:
-#   Re-check durable attempt lineage for that run.
-#   Exit 0 = consistent; 1 = inconsistent/RED; 3 = BLOCKED terminal or bad pin.
+#   Re-check durable attempt lineage for that run (fail-closed).
+#   Exit 0 = consistent ACCEPTED/EXHAUSTED; 1 = inconsistent/RED/non-terminal;
+#   3 = BLOCKED terminal or bad pin.
 #
 # Never writes looptimal-receipt.json. Outcome receipts are solely the job of
-# scripts/verify-outcome.py after an ACCEPTED terminal (see run_demo.sh).
+# scripts/verify-outcome.py before an ACCEPTED terminal (see run_demo.sh).
+#
+# Governance: this is the demo package gate, not the independent product
+# approval authority. Independent maker≠checker review happens outside.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -45,6 +49,14 @@ if ! grep -q 'INSTRUCTIONAL' "${SCRIPT_DIR}/README.md" && ! grep -qi 'instructio
   printf 'verify: RED — README must mark the example as instructional\n' >&2
   exit 1
 fi
+if ! grep -qi 'controlled' "${SCRIPT_DIR}/README.md"; then
+  printf 'verify: RED — README must describe the demo as controlled (not independent field discovery)\n' >&2
+  exit 1
+fi
+if ! grep -qi 'independent' "${SCRIPT_DIR}/README.md"; then
+  printf 'verify: RED — README must state that independent review is outside the demo\n' >&2
+  exit 1
+fi
 
 if [[ -z "${FIRST30_RUN_ROOT:-}" ]]; then
   printf 'verify: GREEN — example package complete (structural / install-level check only)\n'
@@ -57,5 +69,6 @@ export FIRST30_REPO_ROOT="${REPO_ROOT}"
 export FIRST30_EXAMPLE_DIR="${SCRIPT_DIR}"
 
 # Delegate lineage re-check to the same engine run_demo.sh embeds, in
-# --verify-only mode so maker and checker stay distinct processes.
+# --verify-only mode so maker and checker stay distinct processes inside the
+# demo (still not a claim of independent product approval).
 exec bash "${SCRIPT_DIR}/run_demo.sh" --verify-only --root "${RUN_ROOT}"

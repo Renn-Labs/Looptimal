@@ -43,10 +43,13 @@ literal thing `verify-outcome.py` does on every run, including this one.
 ## Your first 30 minutes (instructional budget)
 
 From a checkout, the offline teaching demo at
-[`examples/first-30-minutes/`](examples/first-30-minutes/) shows a **deliberate authentic RED**,
-**durable state**, a **resume** that binds that rejection once, and one honest terminal
-(`ACCEPTED`, `EXHAUSTED`, or `BLOCKED`). "First 30 minutes" is an operator budget, not a measured
-wall-clock guarantee — and not external customer proof, demand evidence, or a ship-to-production seal.
+[`examples/first-30-minutes/`](examples/first-30-minutes/) is a **controlled maker/verifier
+demonstration**: a **deliberately induced RED** on a concrete candidate defect, **durable state**,
+a **resume** that binds that rejection once, a **validated product outcome receipt before
+`ACCEPTED`**, and one honest terminal (`ACCEPTED`, `EXHAUSTED`, or `BLOCKED`). "First 30 minutes"
+is an operator budget, not a measured wall-clock guarantee — and not external customer proof,
+demand evidence, or a ship-to-production seal. Independent maker≠checker product approval is
+**outside** this demo; the embedded subprocess is not that authority.
 
 ```bash
 bash examples/first-30-minutes/run_demo.sh
@@ -54,7 +57,7 @@ bash examples/first-30-minutes/run_demo.sh
 
 Read that example's README before treating any file as acceptance: **attempt evidence**
 (`kind: attempt-evidence`) is not an **accepted outcome receipt** (`looptimal-receipt.json` from
-`scripts/verify-outcome.py`, emitted only after `ACCEPTED`). An install/doctor verdict is a third
+`scripts/verify-outcome.py`, validated before `ACCEPTED` is committed). An install/doctor verdict is a third
 thing. Missing or unresolved source pins fail closed as `BLOCKED` — the demo never silently falls
 back to `main`.
 
