@@ -26,6 +26,7 @@ required=(
   "${SCRIPT_DIR}/state.md"
   "${SCRIPT_DIR}/verify.sh"
   "${SCRIPT_DIR}/run_demo.sh"
+  "${SCRIPT_DIR}/stale-candidate.json"
 )
 
 for path in "${required[@]}"; do

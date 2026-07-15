@@ -18,25 +18,32 @@ offering, or a ship-to-production seal.
 | Embedded subprocess check | Maker and checker run as distinct processes inside `run_demo.sh` so the teaching contract is executable offline | A substitute for independent review |
 | Independent review | External maker ≠ checker governance (separate engines/agents) **outside** this demo | Anything claimed by the demo scripts alone |
 
-Attempt 1’s RED is **deliberately induced** by a concrete candidate defect
-(missing prior-rejection lineage) that the demo verifier is written to detect.
-It is a scripted teaching failure, not a finding from independent review.
-Attempt 2 repairs that defect by binding the sealed attempt-1 evidence once.
+Attempt 1’s RED is **deliberately induced** by a frozen, inspectable candidate
+defect: `stale-candidate.json` carries a wrong `source_manifest_sha256`. The
+same verifier logic used for every attempt recomputes that digest from the
+immutable source pin and rejects the mismatch — it does **not** branch on
+`attempt == 1`. Attempt 2 repairs the same invariant (correct digest) and binds
+the sealed attempt-1 RED evidence once.
 
 `ACCEPTED` is committed only after `scripts/verify-outcome.py` has produced and
-validated a complete outcome receipt. A receipt failure leaves a recoverable
-non-accepted state and a nonzero exit.
+validated a complete outcome receipt. A receipt failure **removes any
+uncommitted published receipt**, leaves a recoverable non-accepted state, and
+exits nonzero.
+
+Terminal documents bind internal run provenance (`source_pin_sha256`,
+`source_manifest_sha256`, `stop_cause_kind`) under the instructional claim
+ceiling. That is **not** a claim of external cryptographic authorship.
 
 ## What you will see
 
 | Step | What happens | Artifact |
 |-|-|-|
 | Source pin | Full local git **commit + tree object ids** (not a tag label); missing/unresolved pin → `BLOCKED` (never silent `main`) | `source-pin.json` in the run root |
-| Attempt 1 | Controlled `RED` on a concrete defect (prior-rejection lineage absent) | `attempt-evidence/attempt-001.json` |
+| Attempt 1 | Controlled `RED` on frozen source-manifest mismatch (`stale-candidate.json`) | `attempt-evidence/attempt-001.json` |
 | Persist | Durable state written before any resume | `state/loop.json` + `state.md` |
-| Attempt 2 / resume | Reads attempt-1 state; lineage increments once | `attempt-evidence/attempt-002.json` |
+| Attempt 2 / resume | Correct digest + prior RED evidence; lineage increments once | `attempt-evidence/attempt-002.json` |
 | Receipt then terminal | Build/validate outcome receipt **first**, then atomic `ACCEPTED` | `outcome/looptimal-receipt.json` + `terminal.json` |
-| Terminal | One of `ACCEPTED`, `EXHAUSTED`, `BLOCKED` | `terminal.json` |
+| Terminal | One of `ACCEPTED`, `EXHAUSTED`, `BLOCKED`, each bound to pin digests | `terminal.json` |
 
 ## Four terms that must not be collapsed
 
@@ -59,9 +66,9 @@ From the repository root (stdlib + bash only; offline; no network):
 bash examples/first-30-minutes/run_demo.sh
 ```
 
-Default mode is the correctable path: attempt 1 controlled `RED` → durable
-state → attempt 2 `GREEN` → validated product outcome receipt → terminal
-`ACCEPTED`.
+Default mode is the correctable path: attempt 1 controlled `RED` (manifest
+mismatch) → durable state → attempt 2 `GREEN` → validated product outcome
+receipt → terminal `ACCEPTED`.
 
 Other honest terminals:
 
@@ -93,6 +100,7 @@ bash examples/first-30-minutes/verify.sh
 | `state.md` | Human-readable durable-state seed / vocabulary |
 | `verify.sh` | External structural + optional run-root lineage gate |
 | `run_demo.sh` | Deterministic offline demo engine (all modes) |
+| `stale-candidate.json` | Frozen wrong `source_manifest_sha256` for attempt-one RED |
 | `README.md` | This teaching contract |
 
 ## Claim ceiling
@@ -101,10 +109,12 @@ bash examples/first-30-minutes/verify.sh
 
 Allowed: mechanism claims about controlled rejection, durable state, attempt
 lineage, terminal idempotency, transactional acceptance (receipt before
-`ACCEPTED`), and the product receipt path on ACCEPTED only.
+`ACCEPTED`), internal run provenance bindings, and the product receipt path on
+ACCEPTED only.
 
 Forbidden: fixed-duration success stories, external customer proof, demand or
 fit claims, corpus certification, category leadership, commercial listing
 status, managed offerings, external authority movement, treating attempt
-evidence as acceptance, or presenting this demo’s embedded check as independent
-product approval.
+evidence as acceptance, presenting this demo’s embedded check as independent
+product approval, or claiming cryptographic external authorship for terminal
+provenance.

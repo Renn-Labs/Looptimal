@@ -38,18 +38,19 @@ VERIFY_OUTCOME = REPO_ROOT / "scripts" / "verify-outcome.py"
 
 LOOP_ID = "first-30-minutes-lineage-close"
 GOAL = (
-    "A controlled first attempt is rejected by an external check, the rejection "
-    "is recorded in durable state, and the next attempt either binds that "
-    "attempt evidence honestly (ACCEPTED), exhausts the retry budget without "
-    "inventing a pass (EXHAUSTED), or stops on a missing/unresolved source pin "
-    "without fabricating progress (BLOCKED)."
+    "A controlled first attempt is rejected by an external check because its "
+    "source_manifest_sha256 does not match the digest recomputed from the "
+    "immutable source pin, the rejection is recorded in durable state, and the "
+    "next attempt either repairs that invariant and binds the prior RED evidence "
+    "(ACCEPTED), exhausts the retry budget without inventing a pass (EXHAUSTED), "
+    "or stops on a missing/unresolved source pin without fabricating progress "
+    "(BLOCKED)."
 )
 MAX_ATTEMPTS = 2
 CLAIM_CEILING = "INSTRUCTIONAL_DEMO_NOT_PRODUCT_PROOF"
-CONTROLLED_RED_REASON = (
-    "controlled rejection: prior rejection attempt evidence lineage is absent"
-)
-FORGED_LINEAGE_RED_REASON = "first attempt cannot claim prior rejection lineage"
+STALE_CANDIDATE_PATH = EXAMPLE_DIR / "stale-candidate.json"
+# Prefix for the invariant-driven first RED (reason names concrete digests).
+STALE_MANIFEST_RED_PREFIX = "source_manifest_sha256 mismatch:"
 EXHAUST_RED_REASON = (
     "source URL is missing and may not be invented: DEMO-SRC-002"
 )
@@ -59,6 +60,7 @@ PINNED_RELPATHS = [
     "examples/first-30-minutes/state.md",
     "examples/first-30-minutes/verify.sh",
     "examples/first-30-minutes/run_demo.sh",
+    "examples/first-30-minutes/stale-candidate.json",
 ]
 TERMINAL_EXIT = {"ACCEPTED": 0, "EXHAUSTED": 2, "BLOCKED": 3}
 FULL_OID_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -92,6 +94,81 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def canonical_json_bytes(value: Any) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
+
+
+def compute_source_manifest_digest(pin: dict[str, Any]) -> str:
+    """Recomputable digest over the immutable pin identity used by candidates.
+
+    Internal run provenance only — not a claim of external cryptographic authorship.
+    """
+    if not isinstance(pin, dict):
+        raise ContractError("source pin required to compute source_manifest_sha256")
+    ref = pin.get("immutable_ref")
+    tree = pin.get("immutable_tree")
+    sources = pin.get("sources")
+    if not isinstance(ref, str) or not FULL_OID_RE.fullmatch(ref.strip()):
+        raise ContractError("source_manifest_sha256 requires a full-commit immutable_ref")
+    if not isinstance(tree, str) or not FULL_OID_RE.fullmatch(tree.strip()):
+        raise ContractError("source_manifest_sha256 requires a full-tree immutable_tree")
+    if not isinstance(sources, list) or not sources:
+        raise ContractError("source_manifest_sha256 requires a non-empty sources list")
+    normalized_sources = []
+    for entry in sources:
+        if not isinstance(entry, dict):
+            raise ContractError("source pin entry invalid for manifest digest")
+        path = entry.get("path")
+        digest = entry.get("sha256")
+        if not isinstance(path, str) or not isinstance(digest, str):
+            raise ContractError("source pin entry missing path/sha256 for manifest digest")
+        normalized_sources.append({"path": path, "sha256": digest})
+    normalized_sources.sort(key=lambda item: item["path"])
+    payload = {
+        "claim_ceiling": pin.get("claim_ceiling"),
+        "immutable_ref": ref.strip(),
+        "immutable_tree": tree.strip(),
+        "packet_id": pin.get("packet_id"),
+        "sources": normalized_sources,
+    }
+    return sha256_bytes(canonical_json_bytes(payload))
+
+
+def source_pin_file_digest(run_root: Path) -> str:
+    pin_path = run_root / "source-pin.json"
+    if not pin_path.is_file():
+        raise ContractError("source-pin.json missing for provenance binding")
+    return sha256_file(pin_path)
+
+
+def load_stale_candidate_fixture() -> dict[str, Any]:
+    if not STALE_CANDIDATE_PATH.is_file():
+        raise ContractError(f"missing stale candidate fixture: {STALE_CANDIDATE_PATH}")
+    fixture = load_object(STALE_CANDIDATE_PATH, "stale candidate fixture")
+    digest = fixture.get("source_manifest_sha256")
+    if not isinstance(digest, str) or len(digest) != 64:
+        raise ContractError("stale candidate fixture lacks a 64-char source_manifest_sha256")
+    if fixture.get("fixture_kind") != "stale-source-manifest":
+        raise ContractError("stale candidate fixture_kind must be stale-source-manifest")
+    return fixture
+
+
+def derive_stop_cause_kind(
+    status: str, reason: str, attempt: int | None, attempt_count: int
+) -> str:
+    if status == "ACCEPTED":
+        return "accepted_after_red_green_lineage"
+    if status == "EXHAUSTED":
+        return "retry_budget_exhausted"
+    if status == "BLOCKED":
+        if attempt_count == 0 or attempt is None:
+            return "source_pin_failure"
+        return "attempt_blocked"
+    raise ContractError(f"unknown terminal status for stop cause: {status}")
 
 
 def atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -382,14 +459,30 @@ def make_candidate(
     state: dict[str, Any],
     run_root: Path,
 ) -> dict[str, Any]:
+    """Build a candidate artifact.
+
+    First sealed attempt uses the committed stale-candidate fixture digest
+    (wrong source_manifest_sha256). After a durable RED, the candidate carries
+    the recomputed correct digest and binds prior rejection evidence.
+    """
+    pin = load_object(run_root / "source-pin.json", "source pin")
+    correct_digest = compute_source_manifest_digest(pin)
+    completed = prior_completed_attempts(state)
     prior_evidence: dict[str, Any] | None = None
-    if attempt >= 2:
-        completed = prior_completed_attempts(state)
-        if len(completed) < 1:
-            raise ContractError("resume requires attempt-one state")
+
+    if not completed:
+        # Frozen inspectable defect: wrong source-manifest digest from fixture.
+        fixture = load_stale_candidate_fixture()
+        manifest_digest = str(fixture["source_manifest_sha256"])
+        if manifest_digest == correct_digest:
+            raise ContractError(
+                "stale candidate fixture digest accidentally matches live pin; "
+                "fixture must remain a stable mismatch"
+            )
+    else:
         prior = completed[-1]
         if prior.get("status") != "RED":
-            raise ContractError("prior durable attempt is not RED")
+            raise ContractError("resume requires a durable prior RED attempt")
         evidence_rel = prior.get("evidence_path")
         if not isinstance(evidence_rel, str):
             raise ContractError("prior attempt missing evidence_path")
@@ -409,9 +502,9 @@ def make_candidate(
             "verdict": evidence.get("verifier_verdict"),
             "reason": evidence.get("verifier_reason"),
         }
+        # Repair the same invariant the first RED named.
+        manifest_digest = correct_digest
 
-    # Attempt 1 deliberately omits lineage — a concrete defect the verifier rejects.
-    # Attempt 2 binds lineage. Exhaust mode keeps a non-inventable defect.
     candidate: dict[str, Any] = {
         "schema_version": 1,
         "job_id": LOOP_ID,
@@ -423,13 +516,15 @@ def make_candidate(
             "external_authority_delta": 0,
             "external_demand_delta": 0,
         },
-        "prior_rejection_evidence": prior_evidence if attempt >= 2 else None,
+        "source_manifest_sha256": manifest_digest,
+        "prior_rejection_evidence": prior_evidence,
         "state_lineage": {
             "attempt": attempt,
-            "prior_attempt_count": max(0, attempt - 1),
+            "prior_attempt_count": len(completed),
         },
     }
     if mode == "exhaust":
+        # Exhaust keeps a second independently recomputable defect after the first RED.
         candidate["sources"] = [
             {"source_id": "DEMO-SRC-001", "url": "https://example.invalid/demo"},
             {"source_id": "DEMO-SRC-002", "url": None},
@@ -451,6 +546,8 @@ def verify_candidate(
     artifact_path: Path,
     artifact_sha256: str,
 ) -> tuple[str, str]:
+    """Same invariant checks for every attempt — no attempt-number RED branch."""
+    del attempt  # attempt number is not a verifier branch; state + artifact decide
     if sha256_file(artifact_path) != artifact_sha256:
         return "BLOCKED", "artifact changed after the runner hashed it"
     if candidate.get("job_id") != LOOP_ID:
@@ -465,41 +562,57 @@ def verify_candidate(
     if authority.get("external_authority_delta") != 0 or authority.get("external_demand_delta") != 0:
         return "BLOCKED", "candidate moves external authority or demand counters"
 
-    prior = candidate.get("prior_rejection_evidence")
-    if attempt == 1:
-        if prior is not None:
-            return "RED", FORGED_LINEAGE_RED_REASON
-        # Concrete induced defect: attempt 1 has no prior-rejection lineage binding.
-        return "RED", CONTROLLED_RED_REASON
-
-    completed = prior_completed_attempts(state)
-    if len(completed) < 1:
-        return "RED", "attempt 2 did not find durable prior attempt state"
-    prior_attempt = completed[-1]
-    evidence_rel = prior_attempt.get("evidence_path")
-    if not isinstance(evidence_rel, str):
-        return "RED", "durable prior attempt lacks evidence_path"
-    evidence_path = (run_root / evidence_rel).resolve()
+    pin = load_object(run_root / "source-pin.json", "source pin")
     try:
-        evidence_path.relative_to(run_root.resolve())
-    except ValueError:
-        return "BLOCKED", "prior evidence path escapes the run root"
-    if not evidence_path.is_file():
-        return "RED", "prior attempt evidence file is missing"
-    evidence = load_object(evidence_path, "prior attempt evidence")
-    if evidence.get("kind") != "attempt-evidence":
-        return "RED", "prior artifact is not attempt evidence"
-    if not isinstance(prior, dict):
-        return "RED", "attempt 2 did not carry durable prior rejection evidence"
-    if prior.get("evidence_sha256") != sha256_file(evidence_path):
-        return "RED", "prior rejection evidence hash is not exact"
-    if prior.get("evidence_sha256") != prior_attempt.get("evidence_sha256"):
-        return "RED", "prior rejection evidence hash does not match durable state"
-    if prior.get("verdict") != "RED" or prior.get("reason") != evidence.get("verifier_reason"):
-        return "RED", "prior rejection verdict or reason does not match sealed attempt evidence"
-    lineage = candidate.get("state_lineage")
-    if not isinstance(lineage, dict) or lineage.get("prior_attempt_count") != 1:
-        return "RED", "attempt 2 does not bind a single prior attempt in lineage"
+        expected_manifest = compute_source_manifest_digest(pin)
+    except ContractError as exc:
+        return "BLOCKED", f"unable to recompute source_manifest_sha256: {exc}"
+
+    claimed = candidate.get("source_manifest_sha256")
+    if not isinstance(claimed, str) or len(claimed) != 64:
+        return "RED", "candidate missing source_manifest_sha256"
+    if claimed != expected_manifest:
+        return (
+            "RED",
+            f"{STALE_MANIFEST_RED_PREFIX} candidate has {claimed}, "
+            f"recomputed from source pin is {expected_manifest}",
+        )
+
+    prior = candidate.get("prior_rejection_evidence")
+    completed = prior_completed_attempts(state)
+
+    if not completed:
+        # No durable prior RED: claiming prior rejection evidence is forged.
+        if prior is not None:
+            return "RED", "prior_rejection_evidence present without durable prior RED"
+    else:
+        prior_attempt = completed[-1]
+        if prior_attempt.get("status") != "RED":
+            return "RED", "durable prior attempt is not RED"
+        evidence_rel = prior_attempt.get("evidence_path")
+        if not isinstance(evidence_rel, str):
+            return "RED", "durable prior attempt lacks evidence_path"
+        evidence_path = (run_root / evidence_rel).resolve()
+        try:
+            evidence_path.relative_to(run_root.resolve())
+        except ValueError:
+            return "BLOCKED", "prior evidence path escapes the run root"
+        if not evidence_path.is_file():
+            return "RED", "prior attempt evidence file is missing"
+        evidence = load_object(evidence_path, "prior attempt evidence")
+        if evidence.get("kind") != "attempt-evidence":
+            return "RED", "prior artifact is not attempt evidence"
+        if not isinstance(prior, dict):
+            return "RED", "candidate did not carry durable prior rejection evidence"
+        if prior.get("evidence_sha256") != sha256_file(evidence_path):
+            return "RED", "prior rejection evidence hash is not exact"
+        if prior.get("evidence_sha256") != prior_attempt.get("evidence_sha256"):
+            return "RED", "prior rejection evidence hash does not match durable state"
+        if prior.get("verdict") != "RED" or prior.get("reason") != evidence.get("verifier_reason"):
+            return "RED", "prior rejection verdict or reason does not match sealed attempt evidence"
+        lineage = candidate.get("state_lineage")
+        if not isinstance(lineage, dict) or lineage.get("prior_attempt_count") != len(completed):
+            return "RED", "candidate state_lineage prior_attempt_count does not match durable state"
 
     if mode == "exhaust":
         sources = candidate.get("sources")
@@ -514,7 +627,10 @@ def verify_candidate(
             return "RED", f"source URL is missing and may not be invented: {missing[0]}"
         return "RED", EXHAUST_RED_REASON
 
-    return "GREEN", "honest resume preserves RED attempt evidence and state lineage"
+    # Correct manifest (+ prior RED binding when required) is the GREEN invariant.
+    if completed:
+        return "GREEN", "honest resume preserves RED attempt evidence and repaired source_manifest_sha256"
+    return "GREEN", "source_manifest_sha256 matches recomputed source pin digest"
 
 
 def set_terminal(
@@ -525,9 +641,32 @@ def set_terminal(
     reason: str,
     attempt: int | None,
 ) -> int:
-    """Write a non-ACCEPTED terminal, or ACCEPTED only when receipt is already validated."""
+    """Write a non-ACCEPTED terminal, or ACCEPTED only when receipt is already validated.
+
+    Every terminal binds the exact source-pin file digest and a derivable stop cause.
+    This is internal run provenance under CLAIM_CEILING — not external authorship.
+    """
+    completed = prior_completed_attempts(state)
+    pin_path = run_root / "source-pin.json"
+    if not pin_path.is_file():
+        raise ContractError("refusing terminal without source-pin.json")
+    pin = load_object(pin_path, "source pin")
+    pin_sha = sha256_file(pin_path)
+    manifest_sha: str | None
+    try:
+        manifest_sha = compute_source_manifest_digest(pin)
+    except ContractError:
+        # Incomplete/invalid pins (zero-attempt BLOCKED) have no full manifest digest.
+        manifest_sha = None
+
     state["status"] = status
-    state["stop"] = {"reason": reason, "attempt": attempt}
+    state["stop"] = {
+        "reason": reason,
+        "attempt": attempt,
+        "source_pin_sha256": pin_sha,
+        "source_manifest_sha256": manifest_sha,
+        "stop_cause_kind": derive_stop_cause_kind(status, reason, attempt, len(completed)),
+    }
     atomic_json(state_path, state)
     write_state_md(run_root, state)
     terminal = {
@@ -540,16 +679,29 @@ def set_terminal(
         "claim_ceiling": CLAIM_CEILING,
         "wall_time_measured": False,
         "elapsed_seconds": None,
-        "attempt_count": len(prior_completed_attempts(state)),
+        "attempt_count": len(completed),
+        "source_pin_sha256": pin_sha,
+        "source_manifest_sha256": manifest_sha,
+        "stop_cause_kind": state["stop"]["stop_cause_kind"],
+        "provenance_note": "internal_run_provenance_not_external_authorship",
     }
     if status == "ACCEPTED":
-        attempts = prior_completed_attempts(state)
+        attempts = completed
         if attempts:
             terminal["accepted_attempt"] = attempts[-1].get("attempt")
             terminal["accepted_artifact_sha256"] = attempts[-1].get("artifact_sha256")
             terminal["accepted_evidence_sha256"] = attempts[-1].get("evidence_sha256")
             if len(attempts) >= 1:
                 terminal["prior_red_evidence_sha256"] = attempts[0].get("evidence_sha256")
+    elif status == "EXHAUSTED":
+        terminal["red_evidence_sha256s"] = [
+            a.get("evidence_sha256") for a in completed if a.get("status") == "RED"
+        ]
+    elif status == "BLOCKED" and completed:
+        last = completed[-1]
+        terminal["blocked_attempt"] = last.get("attempt")
+        terminal["blocked_evidence_sha256"] = last.get("evidence_sha256")
+        terminal["blocked_artifact_sha256"] = last.get("artifact_sha256")
     atomic_json(run_root / "terminal.json", terminal)
     print(json.dumps({"status": status, "reason": reason, "attempt": attempt}, sort_keys=True))
     return TERMINAL_EXIT[status]
@@ -855,11 +1007,14 @@ def commit_accepted(
         # Failure before final commit: leave non-accepted recoverable state.
         if state.get("status") == "ACCEPTED":
             raise ContractError("internal error: ACCEPTED set before receipt success") from exc
-        # Ensure no published receipt on failure.
+        # Explicitly remove any uncommitted published receipt — no masking pass.
         published = run_root / "outcome" / "looptimal-receipt.json"
-        if published.is_file() and state.get("status") != "ACCEPTED":
-            # Only remove if we never committed; staging failures should not leave ACCEPTED.
-            pass
+        if published.is_file():
+            published.unlink()
+        staging_dir = run_root / "outcome"
+        if staging_dir.is_dir():
+            for leftover in staging_dir.glob(".looptimal-receipt.json.tmp-*"):
+                leftover.unlink(missing_ok=True)
         raise ContractError(f"receipt generation failed; refusing ACCEPTED: {exc}") from exc
 
     if not receipt_path.is_file():
@@ -1075,6 +1230,29 @@ def validate_attempt_semantics(run_root: Path, state: dict[str, Any]) -> None:
             raise ContractError(f"{artifact_rel} claim_ceiling mismatch")
         if candidate.get("attempt") != attempt.get("attempt"):
             raise ContractError(f"{artifact_rel} attempt number mismatch")
+        # Recompute the same source-manifest invariant the live verifier used.
+        pin = load_object(run_root / "source-pin.json", "source pin")
+        expected_manifest = compute_source_manifest_digest(pin)
+        claimed_manifest = candidate.get("source_manifest_sha256")
+        if status == "RED" and isinstance(attempt.get("reason"), str) and attempt["reason"].startswith(
+            STALE_MANIFEST_RED_PREFIX
+        ):
+            if claimed_manifest == expected_manifest:
+                raise ContractError(
+                    f"{artifact_rel} claims RED for source_manifest mismatch but digest matches pin"
+                )
+        elif status in {"GREEN", "RED", "BLOCKED"}:
+            # GREEN must match; non-manifest REDs (exhaust) must also carry the correct digest.
+            if status == "GREEN" and claimed_manifest != expected_manifest:
+                raise ContractError(f"{artifact_rel} GREEN source_manifest_sha256 mismatch")
+            if status == "RED" and not (
+                isinstance(attempt.get("reason"), str)
+                and attempt["reason"].startswith(STALE_MANIFEST_RED_PREFIX)
+            ):
+                if claimed_manifest != expected_manifest:
+                    raise ContractError(
+                        f"{artifact_rel} non-manifest RED must still carry correct source_manifest_sha256"
+                    )
 
         lineage = evidence.get("candidate_lineage")
         if not isinstance(lineage, dict):
@@ -1124,25 +1302,95 @@ def validate_terminal_document(run_root: Path, state: dict[str, Any]) -> None:
         raise ContractError("terminal reason drifted from state.stop")
     if terminal.get("attempt") != stop.get("attempt"):
         raise ContractError("terminal attempt drifted from state.stop")
+
+    pin_sha = source_pin_file_digest(run_root)
+    if terminal.get("source_pin_sha256") != pin_sha:
+        raise ContractError("terminal source_pin_sha256 does not match source-pin.json")
+    if stop.get("source_pin_sha256") not in {None, pin_sha}:
+        if stop.get("source_pin_sha256") != pin_sha:
+            raise ContractError("state.stop source_pin_sha256 does not match source-pin.json")
+    if terminal.get("source_pin_sha256") != stop.get("source_pin_sha256"):
+        # When stop lacks the field (legacy), require terminal binding only; else exact match.
+        if stop.get("source_pin_sha256") is not None:
+            raise ContractError("terminal/state source_pin_sha256 binding mismatch")
+
+    expected_kind = derive_stop_cause_kind(
+        status,
+        str(terminal.get("reason") or ""),
+        terminal.get("attempt") if isinstance(terminal.get("attempt"), int) or terminal.get("attempt") is None else None,
+        len(prior_completed_attempts(state)),
+    )
+    if terminal.get("stop_cause_kind") != expected_kind:
+        raise ContractError(
+            f"terminal stop_cause_kind {terminal.get('stop_cause_kind')!r} "
+            f"does not match derivable cause {expected_kind!r}"
+        )
+    if stop.get("stop_cause_kind") not in {None, expected_kind}:
+        if stop.get("stop_cause_kind") != expected_kind:
+            raise ContractError("state.stop stop_cause_kind does not match terminal")
+
+    pin = load_object(run_root / "source-pin.json", "source pin")
+    try:
+        manifest_sha = compute_source_manifest_digest(pin)
+    except ContractError:
+        manifest_sha = None
+    if terminal.get("source_manifest_sha256") != manifest_sha:
+        raise ContractError("terminal source_manifest_sha256 does not match recomputed pin digest")
+    if stop.get("source_manifest_sha256") not in {None, manifest_sha}:
+        if stop.get("source_manifest_sha256") != manifest_sha:
+            raise ContractError("state.stop source_manifest_sha256 mismatch")
+
+    attempts = prior_completed_attempts(state)
     if status == "ACCEPTED":
-        attempts = prior_completed_attempts(state)
         if len(attempts) < 2:
             raise ContractError("ACCEPTED terminal requires RED then GREEN attempts")
         if [a.get("status") for a in attempts] != ["RED", "GREEN"]:
             raise ContractError("ACCEPTED verdict sequence must be RED then GREEN")
-        if terminal.get("accepted_evidence_sha256") not in {
-            None,
-            attempts[-1].get("evidence_sha256"),
-        }:
-            # Prefer binding when present
-            if terminal.get("accepted_evidence_sha256") != attempts[-1].get("evidence_sha256"):
-                raise ContractError("terminal accepted_evidence_sha256 mismatch")
-        if terminal.get("prior_red_evidence_sha256") not in {
-            None,
-            attempts[0].get("evidence_sha256"),
-        }:
-            if terminal.get("prior_red_evidence_sha256") != attempts[0].get("evidence_sha256"):
-                raise ContractError("terminal prior_red_evidence_sha256 mismatch")
+        if terminal.get("accepted_evidence_sha256") != attempts[-1].get("evidence_sha256"):
+            raise ContractError("terminal accepted_evidence_sha256 mismatch")
+        if terminal.get("accepted_artifact_sha256") != attempts[-1].get("artifact_sha256"):
+            raise ContractError("terminal accepted_artifact_sha256 mismatch")
+        if terminal.get("prior_red_evidence_sha256") != attempts[0].get("evidence_sha256"):
+            raise ContractError("terminal prior_red_evidence_sha256 mismatch")
+        if manifest_sha is None:
+            raise ContractError("ACCEPTED requires a complete source_manifest_sha256")
+    elif status == "EXHAUSTED":
+        if len(attempts) != MAX_ATTEMPTS or any(a.get("status") != "RED" for a in attempts):
+            raise ContractError("EXHAUSTED requires two independently sealed RED attempts")
+        reds = terminal.get("red_evidence_sha256s")
+        expected_reds = [a.get("evidence_sha256") for a in attempts]
+        if reds != expected_reds:
+            raise ContractError("EXHAUSTED terminal red_evidence_sha256s mismatch")
+    elif status == "BLOCKED":
+        if not attempts:
+            # Zero-attempt BLOCKED: reason must match independently recomputed pin failure.
+            if terminal.get("attempt") is not None:
+                raise ContractError("zero-attempt BLOCKED must not bind an attempt number")
+            try:
+                verify_source_pin(pin)
+            except BlockedError as pin_exc:
+                if str(pin_exc) != terminal.get("reason") or str(pin_exc) != stop.get("reason"):
+                    raise ContractError(
+                        "zero-attempt BLOCKED reason does not match recomputed source-pin failure"
+                    ) from pin_exc
+            else:
+                raise ContractError(
+                    "zero-attempt BLOCKED with a valid source pin is not a trusted terminal"
+                )
+        else:
+            last = attempts[-1]
+            if last.get("status") != "BLOCKED":
+                raise ContractError("attempt-backed BLOCKED requires a sealed BLOCKED attempt")
+            if last.get("reason") != terminal.get("reason") or last.get("reason") != stop.get("reason"):
+                raise ContractError("attempt-backed BLOCKED reason does not match sealed attempt")
+            if terminal.get("blocked_evidence_sha256") != last.get("evidence_sha256"):
+                raise ContractError("attempt-backed BLOCKED evidence binding mismatch")
+            if terminal.get("blocked_artifact_sha256") != last.get("artifact_sha256"):
+                raise ContractError("attempt-backed BLOCKED artifact binding mismatch")
+            if terminal.get("attempt") != last.get("attempt"):
+                raise ContractError("attempt-backed BLOCKED attempt binding mismatch")
+            # Pin must still be valid for attempt-backed blocked paths.
+            verify_source_pin(pin)
 
 
 def assert_run_consistent(run_root: Path, *, expected_status: str | None = None) -> None:
@@ -1156,8 +1404,6 @@ def assert_run_consistent(run_root: Path, *, expected_status: str | None = None)
         raise BlockedError("missing source-pin.json")
 
     pin = load_object(pin_path, "source pin")
-    verify_source_pin(pin)
-
     state = load_object(state_path, "state")
     status = state.get("status")
     if expected_status is not None and status != expected_status:
@@ -1168,6 +1414,19 @@ def assert_run_consistent(run_root: Path, *, expected_status: str | None = None)
 
     if status not in TERMINAL_EXIT:
         raise ContractError(f"unknown status {status!r}")
+
+    # ACCEPTED / EXHAUSTED require a valid pin up front. BLOCKED may have an
+    # invalid pin (zero-attempt) — validate_terminal_document re-derives that.
+    if status in {"ACCEPTED", "EXHAUSTED"}:
+        verify_source_pin(pin)
+    elif status == "BLOCKED":
+        attempts = prior_completed_attempts(state)
+        if attempts:
+            # Attempt-backed BLOCKED still requires a valid pin + sealed attempt.
+            verify_source_pin(pin)
+            if any(a.get("status") == "GREEN" for a in attempts):
+                raise ContractError("BLOCKED run must not contain GREEN attempts")
+        # else: pin failure is reproduced inside validate_terminal_document
 
     validate_attempt_semantics(run_root, state)
     validate_terminal_document(run_root, state)
@@ -1181,17 +1440,12 @@ def assert_run_consistent(run_root: Path, *, expected_status: str | None = None)
     else:
         if receipt.exists():
             raise ContractError("non-ACCEPTED run must not have looptimal-receipt.json")
-        # EXHAUSTED must be two REDs; BLOCKED may have zero attempts
         attempts = prior_completed_attempts(state)
         if status == "EXHAUSTED":
             if not attempts or any(a.get("status") != "RED" for a in attempts):
                 raise ContractError("EXHAUSTED requires only RED attempts")
             if len(attempts) != MAX_ATTEMPTS:
                 raise ContractError("EXHAUSTED attempt count mismatch")
-        if status == "BLOCKED" and attempts:
-            # Allowed to have attempts that ended BLOCKED, but no GREEN.
-            if any(a.get("status") == "GREEN" for a in attempts):
-                raise ContractError("BLOCKED run must not contain GREEN attempts")
 
 
 def try_commit_green_if_pending(

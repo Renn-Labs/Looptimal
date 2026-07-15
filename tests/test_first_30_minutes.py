@@ -3,15 +3,16 @@ teaching contract (S1-C / RBS-006 learning port).
 
 Proves, offline and deterministically:
   * explicit source pin as full local git commit/tree object ids; missing/unresolved/main → BLOCKED
-  * attempt one is a controlled RED with inspectable attempt-evidence (not a receipt)
-  * state persists; resume increments lineage once
-  * ACCEPTED / EXHAUSTED / BLOCKED terminals
+  * attempt one is a controlled RED from frozen source-manifest mismatch (not attempt==1)
+  * state persists; resume repairs the digest and binds prior RED evidence once
+  * ACCEPTED / EXHAUSTED / BLOCKED terminals bound to source-pin digests
   * ACCEPTED is transactional (receipt validated before ACCEPTED commit)
   * terminal rerun is fail-closed idempotent (stable hashes, no new attempts)
   * only ACCEPTED emits looptimal-receipt.json via scripts/verify-outcome.py
   * README vocabulary distinguishes install / attempt / verifier / outcome receipt
   * no forbidden product-proof claims; demo is controlled, not independent approval
   * adversarial forgeries and non-terminal verify-only paths fail closed
+  * forged BLOCKED with valid pin is RED; receipt failure leaves no published receipt
 """
 from __future__ import annotations
 
@@ -31,9 +32,7 @@ REPO = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO / "examples" / "first-30-minutes"
 DEMO = EXAMPLE / "run_demo.sh"
 VERIFY = EXAMPLE / "verify.sh"
-CONTROLLED_RED_REASON = (
-    "controlled rejection: prior rejection attempt evidence lineage is absent"
-)
+STALE_MANIFEST_RED_PREFIX = "source_manifest_sha256 mismatch:"
 FULL_OID_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -172,6 +171,7 @@ def test_example_package_files_exist():
         "state.md",
         "verify.sh",
         "run_demo.sh",
+        "stale-candidate.json",
     ):
         assert (EXAMPLE / name).is_file(), name
 
@@ -268,7 +268,9 @@ def test_accept_path_red_then_green_emits_outcome_receipt_only(tmp_path: Path):
     state = _load(root / "state" / "loop.json")
     assert state["status"] == "ACCEPTED"
     assert [a["status"] for a in state["attempts"]] == ["RED", "GREEN"]
-    assert state["attempts"][0]["reason"] == CONTROLLED_RED_REASON
+    assert state["attempts"][0]["reason"].startswith(STALE_MANIFEST_RED_PREFIX)
+    stale = _load(EXAMPLE / "stale-candidate.json")
+    assert stale["source_manifest_sha256"] in state["attempts"][0]["reason"]
 
     evidence1 = _load(root / "attempt-evidence" / "attempt-001.json")
     assert evidence1["kind"] == "attempt-evidence"
@@ -304,6 +306,18 @@ def test_accept_path_red_then_green_emits_outcome_receipt_only(tmp_path: Path):
     terminal = _load(root / "terminal.json")
     assert terminal["status"] == "ACCEPTED"
     assert terminal["loop_id"] == state["loop_id"]
+    pin_sha = _sha256(root / "source-pin.json")
+    assert terminal["source_pin_sha256"] == pin_sha
+    assert terminal["stop_cause_kind"] == "accepted_after_red_green_lineage"
+    assert terminal.get("provenance_note") == "internal_run_provenance_not_external_authorship"
+    assert state["stop"]["source_pin_sha256"] == pin_sha
+
+    cand1 = _load(root / "work" / "candidate-attempt-001.json")
+    cand2 = _load(root / "work" / "candidate-attempt-002.json")
+    assert cand1["source_manifest_sha256"] == stale["source_manifest_sha256"]
+    assert cand2["source_manifest_sha256"] != cand1["source_manifest_sha256"]
+    assert cand2["source_manifest_sha256"] == terminal["source_manifest_sha256"]
+    assert evidence1["verifier_reason"].startswith(STALE_MANIFEST_RED_PREFIX)
 
     for path in (root / "attempt-evidence").glob("*.json"):
         assert _load(path)["kind"] == "attempt-evidence"
@@ -336,7 +350,7 @@ def test_exhaust_path_two_reds_no_outcome_receipt(tmp_path: Path):
     state = _load(root / "state" / "loop.json")
     assert state["status"] == "EXHAUSTED"
     assert [a["status"] for a in state["attempts"]] == ["RED", "RED"]
-    assert state["attempts"][0]["reason"] == CONTROLLED_RED_REASON
+    assert state["attempts"][0]["reason"].startswith(STALE_MANIFEST_RED_PREFIX)
     assert "may not be invented" in state["attempts"][1]["reason"]
 
     assert not (root / "outcome" / "looptimal-receipt.json").exists()
@@ -622,7 +636,7 @@ def test_run_demo_default_entrypoint_exits_zero():
     proc = _run_demo()
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert "ACCEPTED" in proc.stdout
-    assert "controlled rejection" in proc.stdout
+    assert "source_manifest_sha256 mismatch" in proc.stdout
     assert "looptimal-receipt" in proc.stdout
 
 
@@ -875,3 +889,243 @@ def test_source_pin_binds_git_object_not_only_working_tree(tmp_path: Path):
     commit = pin["immutable_ref"]
     for entry in pin["sources"]:
         assert entry["sha256"] == _git_blob_sha256(commit, entry["path"])
+
+
+# --------------------------------------------------------------------------- #
+# Hostile provenance regressions (S1-C repair)
+# --------------------------------------------------------------------------- #
+def test_verifier_source_has_no_unconditional_attempt_one_rejection():
+    """Attempt-one RED must not come from an attempt-number branch."""
+    src = DEMO.read_text(encoding="utf-8")
+    # Embedded engine lives in the heredoc; forbid the historical branch.
+    assert "if attempt == 1:" not in src
+    assert "attempt == 1" not in src
+    assert "CONTROLLED_RED_REASON" not in src
+    assert "STALE_MANIFEST_RED_PREFIX" in src
+    assert "stale-candidate.json" in src
+    stale = _load(EXAMPLE / "stale-candidate.json")
+    assert stale["fixture_kind"] == "stale-source-manifest"
+    assert stale["source_manifest_sha256"] == "0" * 64
+
+
+def test_attempt_one_red_is_frozen_manifest_mismatch_and_attempt_two_repairs(tmp_path: Path):
+    root = tmp_path / "manifest-repair"
+    proc = _run_demo("--mode", "accept", "--root", str(root))
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    state = _load(root / "state" / "loop.json")
+    assert [a["status"] for a in state["attempts"]] == ["RED", "GREEN"]
+    r0 = state["attempts"][0]["reason"]
+    assert r0.startswith(STALE_MANIFEST_RED_PREFIX)
+    stale = _load(EXAMPLE / "stale-candidate.json")
+    assert stale["source_manifest_sha256"] in r0
+    # Named concrete digests remain inspectable in attempt evidence.
+    evidence1 = _load(root / "attempt-evidence" / "attempt-001.json")
+    assert evidence1["verifier_reason"] == r0
+    cand1 = _load(root / "work" / "candidate-attempt-001.json")
+    cand2 = _load(root / "work" / "candidate-attempt-002.json")
+    assert cand1["source_manifest_sha256"] == stale["source_manifest_sha256"]
+    assert cand2["source_manifest_sha256"] != stale["source_manifest_sha256"]
+    assert cand2["prior_rejection_evidence"]["evidence_sha256"] == state["attempts"][0][
+        "evidence_sha256"
+    ]
+    assert cand2["prior_rejection_evidence"]["verdict"] == "RED"
+    assert cand2["prior_rejection_evidence"]["reason"] == r0
+
+
+def _valid_pin_dict() -> dict[str, Any]:
+    commit, tree = _head_commit_tree()
+    sources = []
+    for rel in (
+        "examples/first-30-minutes/README.md",
+        "examples/first-30-minutes/loop-spec.yaml",
+        "examples/first-30-minutes/state.md",
+        "examples/first-30-minutes/verify.sh",
+        "examples/first-30-minutes/run_demo.sh",
+        "examples/first-30-minutes/stale-candidate.json",
+    ):
+        sources.append({"path": rel, "sha256": _git_blob_sha256(commit, rel)})
+    return {
+        "schema_version": 1,
+        "packet_id": "first-30-minutes",
+        "claim_ceiling": "INSTRUCTIONAL_DEMO_NOT_PRODUCT_PROOF",
+        "forbidden_fallback": "main",
+        "immutable_ref": commit,
+        "immutable_tree": tree,
+        "immutable_ref_kind": "git_commit",
+        "sources": sources,
+        "scope_interpretation": "instructional_budget_not_observed_duration",
+        "wall_time_measured": False,
+        "elapsed_seconds": None,
+        "intended_operator_budget_minutes": 30,
+    }
+
+
+def test_forged_blocked_with_valid_pin_is_red_not_trusted(tmp_path: Path):
+    """Valid pin + mutually matching forged BLOCKED state/terminal must not verify."""
+    root = tmp_path / "forged-blocked"
+    root.mkdir()
+    (root / "state").mkdir()
+    pin = _valid_pin_dict()
+    _dump(root / "source-pin.json", pin)
+    pin_sha = _sha256(root / "source-pin.json")
+    # Build a matching but untrusted BLOCKED terminal (no real pin failure).
+    reason = "forged blocked with a valid pin"
+    stop = {
+        "reason": reason,
+        "attempt": None,
+        "source_pin_sha256": pin_sha,
+        "source_manifest_sha256": None,
+        "stop_cause_kind": "source_pin_failure",
+    }
+    # Use a plausible-looking terminal that agrees with state.
+    # source_manifest may be recomputed from valid pin — forge both sides consistently
+    # after we know the engine expects valid pin → RED. Put None first; if engine
+    # recomputes, mismatch also fails.
+    import hashlib
+    import json as _json
+
+    def _manifest(p: dict[str, Any]) -> str:
+        sources = sorted(
+            [{"path": e["path"], "sha256": e["sha256"]} for e in p["sources"]],
+            key=lambda x: x["path"],
+        )
+        payload = {
+            "claim_ceiling": p["claim_ceiling"],
+            "immutable_ref": p["immutable_ref"],
+            "immutable_tree": p["immutable_tree"],
+            "packet_id": p["packet_id"],
+            "sources": sources,
+        }
+        raw = _json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        return hashlib.sha256(raw).hexdigest()
+
+    manifest = _manifest(pin)
+    stop["source_manifest_sha256"] = manifest
+    state = {
+        "schema_version": 1,
+        "loop_id": "first-30-minutes-lineage-close",
+        "goal": (
+            "A controlled first attempt is rejected by an external check because its "
+            "source_manifest_sha256 does not match the digest recomputed from the "
+            "immutable source pin, the rejection is recorded in durable state, and the "
+            "next attempt either repairs that invariant and binds the prior RED evidence "
+            "(ACCEPTED), exhausts the retry budget without inventing a pass (EXHAUSTED), "
+            "or stops on a missing/unresolved source pin without fabricating progress "
+            "(BLOCKED)."
+        ),
+        "status": "BLOCKED",
+        "attempts": [],
+        "stop": stop,
+        "claim_ceiling": "INSTRUCTIONAL_DEMO_NOT_PRODUCT_PROOF",
+        "max_attempts": 2,
+    }
+    _dump(root / "state" / "loop.json", state)
+    terminal = {
+        "schema_version": 1,
+        "loop_id": "first-30-minutes-lineage-close",
+        "goal": state["goal"],
+        "status": "BLOCKED",
+        "reason": reason,
+        "attempt": None,
+        "claim_ceiling": "INSTRUCTIONAL_DEMO_NOT_PRODUCT_PROOF",
+        "wall_time_measured": False,
+        "elapsed_seconds": None,
+        "attempt_count": 0,
+        "source_pin_sha256": pin_sha,
+        "source_manifest_sha256": manifest,
+        "stop_cause_kind": "source_pin_failure",
+        "provenance_note": "internal_run_provenance_not_external_authorship",
+    }
+    _dump(root / "terminal.json", terminal)
+    shutil.copyfile(EXAMPLE / "state.md", root / "state.md")
+
+    vo = _verify_only(root)
+    assert vo.returncode == 1, vo.stdout + vo.stderr
+    assert "valid source pin" in (vo.stderr + vo.stdout).lower() or "not a trusted" in (
+        vo.stderr + vo.stdout
+    ).lower() or "RED" in vo.stderr
+
+    before_state = _sha256(root / "state" / "loop.json")
+    before_term = _sha256(root / "terminal.json")
+    rerun = _run_demo("--mode", "accept", "--root", str(root))
+    assert rerun.returncode != 0
+    # Must not rewrite forged BLOCKED into trusted success.
+    assert _load(root / "state" / "loop.json")["status"] != "ACCEPTED"
+    assert not (root / "outcome" / "looptimal-receipt.json").exists()
+    # Fail-closed: no silent rewrite of the forged terminal into a green path.
+    assert _sha256(root / "state" / "loop.json") == before_state or _load(
+        root / "state" / "loop.json"
+    )["status"] == "BLOCKED"
+    assert _verify_only(root).returncode == 1
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "source_pin_sha256",
+        "reason",
+        "attempt",
+        "accepted_evidence_sha256",
+    ],
+)
+def test_terminal_provenance_field_mutations_fail(tmp_path: Path, field: str):
+    root = tmp_path / f"term-mut-{field}"
+    assert _run_demo("--mode", "accept", "--root", str(root)).returncode == 0
+    terminal = _load(root / "terminal.json")
+    if field == "source_pin_sha256":
+        terminal["source_pin_sha256"] = "f" * 64
+    elif field == "reason":
+        terminal["reason"] = "mutated stop reason"
+    elif field == "attempt":
+        terminal["attempt"] = 99
+    elif field == "accepted_evidence_sha256":
+        terminal["accepted_evidence_sha256"] = "e" * 64
+    else:
+        raise AssertionError(field)
+    _dump(root / "terminal.json", terminal)
+    assert _verify_only(root).returncode != 0
+    assert _run_demo("--mode", "accept", "--root", str(root)).returncode != 0
+
+
+def test_invalid_source_pin_blocked_verifies_and_reruns_idempotent(tmp_path: Path):
+    root = tmp_path / "real-block"
+    first = _run_demo("--mode", "block", "--root", str(root))
+    assert first.returncode == 3, first.stderr + first.stdout
+    state = _load(root / "state" / "loop.json")
+    assert state["status"] == "BLOCKED"
+    assert state["attempts"] == []
+    terminal = _load(root / "terminal.json")
+    assert terminal["status"] == "BLOCKED"
+    assert terminal["stop_cause_kind"] == "source_pin_failure"
+    assert terminal["source_pin_sha256"] == _sha256(root / "source-pin.json")
+    # verify-only exit 3 for consistent BLOCKED
+    vo = _verify_only(root)
+    assert vo.returncode == 3, vo.stderr + vo.stdout
+    before_state = _sha256(root / "state" / "loop.json")
+    before_term = _sha256(root / "terminal.json")
+    second = _run_demo("--mode", "block", "--root", str(root))
+    assert second.returncode == 3
+    assert _sha256(root / "state" / "loop.json") == before_state
+    assert _sha256(root / "terminal.json") == before_term
+    assert not (root / "outcome" / "looptimal-receipt.json").exists()
+
+
+def test_receipt_generation_failure_removes_published_receipt(tmp_path: Path):
+    """Force receipt failure: no ACCEPTED state and no published receipt remain."""
+    root = tmp_path / "recv-unlink"
+    root.mkdir()
+    # Plant a file named outcome so materials cannot create outcome/ as directory.
+    (root / "outcome").write_text("not-a-directory\n", encoding="utf-8")
+    proc = _run_demo("--mode", "accept", "--root", str(root))
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    state = _load(root / "state" / "loop.json")
+    assert state["status"] != "ACCEPTED"
+    # No published receipt path under a real outcome dir.
+    if (root / "outcome").is_dir():
+        assert not (root / "outcome" / "looptimal-receipt.json").exists()
+    else:
+        # outcome is still the planted file — not a receipt.
+        assert (root / "outcome").is_file()
+    if (root / "terminal.json").exists():
+        assert _load(root / "terminal.json").get("status") != "ACCEPTED"
+

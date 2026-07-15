@@ -11,11 +11,13 @@ pattern: morty
 
 # --- Atom 1: Goal -----------------------------------------------------------
 goal: >
-  A controlled first attempt is rejected by an external check, the rejection
-  is recorded in durable state, and the next attempt either binds that
-  attempt evidence honestly (ACCEPTED), exhausts the retry budget without
-  inventing a pass (EXHAUSTED), or stops on a missing/unresolved source pin
-  without fabricating progress (BLOCKED).
+  A controlled first attempt is rejected by an external check because its
+  source_manifest_sha256 does not match the digest recomputed from the
+  immutable source pin, the rejection is recorded in durable state, and the
+  next attempt either repairs that invariant and binds the prior RED evidence
+  (ACCEPTED), exhausts the retry budget without inventing a pass (EXHAUSTED),
+  or stops on a missing/unresolved source pin without fabricating progress
+  (BLOCKED).
 
 # --- Atom 2: State ----------------------------------------------------------
 state:
@@ -24,27 +26,32 @@ state:
     - attempt number and mode
     - verifier verdict and reason
     - prior-attempt evidence hash (lineage)
+    - source-manifest digest binding
     - terminal status when the loop stops
     - outcome receipt digests when ACCEPTED
 
 # --- Atom 3: Verifier (EXTERNAL to the maker step — demo subprocess) --------
 # Note: this is the teaching gate inside the example package. Independent
 # maker≠checker product review is a separate authority outside this demo.
+# The same invariant checks evaluate every attempt (no attempt-number RED).
 verifier:
   kind: test
   command: "bash examples/first-30-minutes/verify.sh"
   green_means: >
     the example package is structurally complete and, when a run root is
     supplied, the durable attempt lineage, source pin (local git commit/tree
-    object), terminal document, and (for ACCEPTED) product outcome receipt are
-    mutually consistent; attempt evidence is never treated as an accepted
-    outcome receipt; READY/RUNNING and forged terminals fail closed
+    object), terminal document (bound to source-pin digests and stop cause),
+    and (for ACCEPTED) product outcome receipt are mutually consistent;
+    attempt evidence is never treated as an accepted outcome receipt;
+    READY/RUNNING and forged terminals fail closed; zero-attempt BLOCKED only
+    verifies when a source-pin failure is independently recomputed
 
 # --- Atom 4: Stop conditions -----------------------------------------------
 stop:
   success: >
-    terminal ACCEPTED after a controlled RED, one honest resume, and a
-    validated product outcome receipt committed before ACCEPTED state
+    terminal ACCEPTED after a controlled RED (frozen source-manifest mismatch),
+    one honest resume that repairs the digest and binds prior RED evidence, and
+    a validated product outcome receipt committed before ACCEPTED state
   max_iterations: 2
   budget:
     tokens: null
@@ -58,6 +65,7 @@ human_checkpoints:
   - "do not fall back to an unpinned main branch when the source pin is missing"
   - "do not claim external demand, ship-to-production readiness, or corpus certification"
   - "do not treat this demo's embedded check as independent product approval"
+  - "do not claim terminal provenance is external cryptographic authorship"
 
 integrations:
   oh_my_claudecode: false

@@ -44,12 +44,15 @@ literal thing `verify-outcome.py` does on every run, including this one.
 
 From a checkout, the offline teaching demo at
 [`examples/first-30-minutes/`](examples/first-30-minutes/) is a **controlled maker/verifier
-demonstration**: a **deliberately induced RED** on a concrete candidate defect, **durable state**,
-a **resume** that binds that rejection once, a **validated product outcome receipt before
-`ACCEPTED`**, and one honest terminal (`ACCEPTED`, `EXHAUSTED`, or `BLOCKED`). "First 30 minutes"
-is an operator budget, not a measured wall-clock guarantee — and not external customer proof,
-demand evidence, or a ship-to-production seal. Independent maker≠checker product approval is
-**outside** this demo; the embedded subprocess is not that authority.
+demonstration**: a **deliberately induced RED** on a frozen candidate defect (wrong
+`source_manifest_sha256` in `stale-candidate.json`; the verifier recomputes the digest from the
+immutable source pin — it does not branch on attempt number), **durable state**, a **resume** that
+repairs that invariant and binds the prior RED evidence once, a **validated product outcome
+receipt before `ACCEPTED`**, and one honest terminal (`ACCEPTED`, `EXHAUSTED`, or `BLOCKED`) bound
+to internal run provenance digests. "First 30 minutes" is an operator budget, not a measured
+wall-clock guarantee — and not external customer proof, demand evidence, or a ship-to-production
+seal. Independent maker≠checker product approval is **outside** this demo; the embedded subprocess
+is not that authority.
 
 ```bash
 bash examples/first-30-minutes/run_demo.sh

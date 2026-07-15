@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "stale-source-manifest",
+  "description": "Committed inspectable defect for attempt one. Carries a deliberately wrong source_manifest_sha256. The verifier recomputes the digest from the immutable source pin and rejects the mismatch; it does not branch on attempt number.",
+  "source_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "claim_ceiling": "INSTRUCTIONAL_DEMO_NOT_PRODUCT_PROOF",
+  "classification": "instructional_demo_not_product_proof"
+}
