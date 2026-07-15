@@ -1128,4 +1128,3 @@ def test_receipt_generation_failure_removes_published_receipt(tmp_path: Path):
         assert (root / "outcome").is_file()
     if (root / "terminal.json").exists():
         assert _load(root / "terminal.json").get("status") != "ACCEPTED"
-
