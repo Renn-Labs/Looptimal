@@ -40,6 +40,24 @@ untouched — and the outer verifier catches it. A maker's self-reported GREEN c
 only a live re-check can. This is why maker ≠ checker isn't a slogan in Looptimal — it's the
 literal thing `verify-outcome.py` does on every run, including this one.
 
+## Your first 30 minutes (instructional budget)
+
+From a checkout, the offline teaching demo at
+[`examples/first-30-minutes/`](examples/first-30-minutes/) shows a **deliberate authentic RED**,
+**durable state**, a **resume** that binds that rejection once, and one honest terminal
+(`ACCEPTED`, `EXHAUSTED`, or `BLOCKED`). "First 30 minutes" is an operator budget, not a measured
+wall-clock guarantee — and not external customer proof, demand evidence, or a ship-to-production seal.
+
+```bash
+bash examples/first-30-minutes/run_demo.sh
+```
+
+Read that example's README before treating any file as acceptance: **attempt evidence**
+(`kind: attempt-evidence`) is not an **accepted outcome receipt** (`looptimal-receipt.json` from
+`scripts/verify-outcome.py`, emitted only after `ACCEPTED`). An install/doctor verdict is a third
+thing. Missing or unresolved source pins fail closed as `BLOCKED` — the demo never silently falls
+back to `main`.
+
 At the **loop level**, it refuses to blueprint a loop until all four atoms are real:
 
 | Atom | What it is | The failure it prevents |

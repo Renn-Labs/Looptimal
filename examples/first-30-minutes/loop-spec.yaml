@@ -1,0 +1,55 @@
+# loop-spec.yaml — first-30-minutes teaching example.
+# Instructional budget, not a measured completion-time claim.
+# Four atoms + guardrails. The runnable contract lives in run_demo.sh.
+
+schema_version: 1
+slug: first-30-minutes
+created: 2026-07-15
+pattern: morty
+
+# --- Atom 1: Goal -----------------------------------------------------------
+goal: >
+  A controlled first attempt is rejected by an external check, the rejection
+  is recorded in durable state, and the next attempt either binds that
+  attempt evidence honestly (ACCEPTED), exhausts the retry budget without
+  inventing a pass (EXHAUSTED), or stops on a missing/unresolved source pin
+  without fabricating progress (BLOCKED).
+
+# --- Atom 2: State ----------------------------------------------------------
+state:
+  path: examples/first-30-minutes/state.md
+  records:
+    - attempt number and mode
+    - verifier verdict and reason
+    - prior-attempt evidence hash (lineage)
+    - terminal status when the loop stops
+
+# --- Atom 3: Verifier (EXTERNAL — not the maker's own opinion) --------------
+verifier:
+  kind: test
+  command: "bash examples/first-30-minutes/verify.sh"
+  green_means: >
+    the example package is structurally complete and, when a run root is
+    supplied, the durable attempt lineage is consistent with the recorded
+    terminal (attempt evidence is never treated as an accepted outcome receipt)
+
+# --- Atom 4: Stop conditions -----------------------------------------------
+stop:
+  success: "terminal ACCEPTED after a deliberate RED and one honest resume"
+  max_iterations: 2
+  budget:
+    tokens: null
+    wall_clock_minutes: 30   # instructional operator budget, not wall-time proof
+  halt_file: examples/first-30-minutes/HALT
+
+# --- Autonomy & safety ------------------------------------------------------
+autonomy: dry-run
+human_checkpoints:
+  - "do not treat attempt evidence as customer acceptance or an outcome receipt"
+  - "do not fall back to an unpinned main branch when the source pin is missing"
+  - "do not claim external demand, ship-to-production readiness, or corpus certification"
+
+integrations:
+  oh_my_claudecode: false
+  subagent_isolation: false
+  heavy_orchestrator: false
