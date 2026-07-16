@@ -60,8 +60,8 @@ if ! grep -qi 'independent' "${SCRIPT_DIR}/README.md"; then
 fi
 
 if [[ -z "${FIRST30_RUN_ROOT:-}" ]]; then
-  printf 'verify: GREEN — example package complete (structural / install-level check only)\n'
-  printf 'verify: note — this is not an accepted outcome receipt\n'
+  printf 'verify: layer=smoke GREEN — example package complete (structural / install-level smoke only)\n'
+  printf 'verify: note — smoke is not a verifier attempt result and not an accepted outcome receipt\n'
   exit 0
 fi
 

@@ -200,6 +200,43 @@ def load_object(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
+def resolve_state_path(run_root: Path, rel: str, *, field: str) -> Path:
+    """Resolve a state-derived relative path under run_root for read/hash.
+
+    Rejects absolute paths, '..' segments, any symlink on the path, and any
+    resolved location outside the run root — before the caller reads or hashes.
+    """
+    if not isinstance(rel, str) or not rel:
+        raise ContractError(f"{field} missing or empty")
+    text = rel.replace("\\", "/")
+    if text.startswith("/") or os.path.isabs(text) or ".." in text.split("/"):
+        raise ContractError(
+            f"{field} must be a relative non-traversing path under the run root: {rel!r}"
+        )
+    parts = [p for p in Path(text).parts if p not in ("", ".")]
+    if not parts:
+        raise ContractError(f"{field} path empty after normalization: {rel!r}")
+
+    root = run_root.resolve()
+    cur = root
+    for part in parts:
+        cur = cur / part
+        try:
+            if cur.is_symlink():
+                raise ContractError(f"{field} path must not contain symlinks: {rel!r}")
+        except OSError as exc:
+            raise ContractError(f"{field} path unreadable: {rel!r}") from exc
+    try:
+        resolved = cur.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise ContractError(f"{field} path could not be resolved: {rel!r}") from exc
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ContractError(f"{field} path escapes the run root: {rel!r}") from exc
+    return cur
+
+
 def git_run(*args: str, binary: bool = False) -> subprocess.CompletedProcess[Any]:
     """Local git object inspection only — never network operations."""
     env = {
@@ -486,8 +523,9 @@ def make_candidate(
         evidence_rel = prior.get("evidence_path")
         if not isinstance(evidence_rel, str):
             raise ContractError("prior attempt missing evidence_path")
-        evidence_path = (run_root / evidence_rel).resolve()
-        evidence_path.relative_to(run_root.resolve())
+        evidence_path = resolve_state_path(
+            run_root, evidence_rel, field="evidence_path"
+        )
         if not evidence_path.is_file():
             raise ContractError("prior attempt evidence missing on disk")
         evidence = load_object(evidence_path, "prior attempt evidence")
@@ -592,11 +630,12 @@ def verify_candidate(
         evidence_rel = prior_attempt.get("evidence_path")
         if not isinstance(evidence_rel, str):
             return "RED", "durable prior attempt lacks evidence_path"
-        evidence_path = (run_root / evidence_rel).resolve()
         try:
-            evidence_path.relative_to(run_root.resolve())
-        except ValueError:
-            return "BLOCKED", "prior evidence path escapes the run root"
+            evidence_path = resolve_state_path(
+                run_root, evidence_rel, field="evidence_path"
+            )
+        except ContractError as exc:
+            return "BLOCKED", str(exc)
         if not evidence_path.is_file():
             return "RED", "prior attempt evidence file is missing"
         evidence = load_object(evidence_path, "prior attempt evidence")
@@ -885,10 +924,63 @@ def emit_outcome_receipt(run_root: Path, state: dict[str, Any]) -> Path:
         state=state,
         materials=materials,
         receipt_path=staging,
+        run_product_check=False,  # staging path; product check runs after publish
     )
-    # Only after full validation do we publish the receipt path used by ACCEPTED.
+    # Only after structural validation do we publish the receipt path used by ACCEPTED.
     os.replace(staging, receipt_path)
+    try:
+        # Product prove bridge: committed receipt must re-derive GREEN via --check-receipt.
+        run_product_check_receipt(receipt_path, outcome)
+    except ContractError:
+        # RED/failed product check must leave no committed receipt.
+        receipt_path.unlink(missing_ok=True)
+        for leftover in outcome.glob(".looptimal-receipt.json.tmp-*"):
+            leftover.unlink(missing_ok=True)
+        raise
     return receipt_path
+
+
+def run_product_check_receipt(receipt_path: Path, outcome: Path) -> None:
+    """Re-derive a published receipt with the product verifier (references/receipt.md).
+
+    This is the prove-bridge gate: smoke and attempt verdicts are not enough; only a
+    receipt that scripts/verify-outcome.py --check-receipt re-derives as GREEN may stand.
+    """
+    if not receipt_path.is_file():
+        raise ContractError("product --check-receipt requires a published receipt path")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(VERIFY_OUTCOME),
+            "--check-receipt",
+            str(receipt_path),
+            "--workdir",
+            str(outcome),
+            "--repeat",
+            "1",
+        ],
+        cwd=str(outcome),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={k: v for k, v in os.environ.items() if k != "LOOPTIMAL_FRAMER_KEY"},
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise ContractError(
+            f"product --check-receipt failed (no committed receipt): "
+            f"{proc.stderr or proc.stdout}"
+        )
+    try:
+        report = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise ContractError(
+            f"product --check-receipt returned non-JSON output: {proc.stdout!r}"
+        ) from exc
+    if report.get("result") != "GREEN":
+        raise ContractError(
+            f"product --check-receipt result is not GREEN: {report.get('result')!r}"
+        )
 
 
 def validate_receipt_object(
@@ -898,6 +990,7 @@ def validate_receipt_object(
     state: dict[str, Any],
     materials: dict[str, Any] | None = None,
     receipt_path: Path | None = None,
+    run_product_check: bool = True,
 ) -> None:
     if receipt.get("kind") != "looptimal-receipt":
         raise ContractError("emitted receipt lacks kind=looptimal-receipt")
@@ -963,30 +1056,15 @@ def validate_receipt_object(
         if materials.get("lineage_sha256") != sha256_file(lineage_path):
             raise ContractError("lineage artifact hash drifted after write")
 
-    # Live re-check through the product verifier when a published receipt path exists.
-    if receipt_path is not None and receipt_path.name == "looptimal-receipt.json":
-        proc = subprocess.run(
-            [
-                sys.executable,
-                str(VERIFY_OUTCOME),
-                "--bundle",
-                str(bundle_path),
-                "--workdir",
-                str(outcome),
-                "--repeat",
-                "1",
-            ],
-            cwd=str(outcome),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            env={k: v for k, v in os.environ.items() if k != "LOOPTIMAL_FRAMER_KEY"},
-            check=False,
-        )
-        if proc.returncode != 0:
-            raise ContractError(
-                f"live verify-outcome re-check failed: {proc.stderr or proc.stdout}"
-            )
+    # Product prove bridge: published receipts must re-derive via --check-receipt.
+    # Staging temps use run_product_check=False; emit_outcome_receipt runs it after publish.
+    if (
+        run_product_check
+        and receipt_path is not None
+        and receipt_path.is_file()
+        and receipt_path.name == "looptimal-receipt.json"
+    ):
+        run_product_check_receipt(receipt_path, outcome)
 
 
 def commit_accepted(
@@ -1030,8 +1108,14 @@ def commit_accepted(
     print(
         json.dumps(
             {
+                "layer": "receipt",
                 "outcome_receipt": "outcome/looptimal-receipt.json",
-                "note": "emitted only via scripts/verify-outcome.py before ACCEPTED commit",
+                "product_check": "scripts/verify-outcome.py --check-receipt",
+                "note": (
+                    "emitted only via scripts/verify-outcome.py after GREEN, "
+                    "then product --check-receipt re-derived GREEN before ACCEPTED commit; "
+                    "not smoke, not attempt-evidence"
+                ),
             },
             sort_keys=True,
         )
@@ -1140,10 +1224,12 @@ def run_attempt(
     print(
         json.dumps(
             {
+                "layer": "verifier",
                 "attempt": attempt_number,
                 "verdict": verdict,
                 "reason": reason,
                 "evidence_sha256": evidence_sha256,
+                "note": "attempt verifier result — not smoke, not an outcome receipt",
             },
             sort_keys=True,
         )
@@ -1184,7 +1270,9 @@ def validate_attempt_semantics(run_root: Path, state: dict[str, Any]) -> None:
         evidence_rel = attempt.get("evidence_path")
         if not isinstance(evidence_rel, str):
             raise ContractError(f"attempt {index} missing evidence_path")
-        evidence_path = run_root / evidence_rel
+        evidence_path = resolve_state_path(
+            run_root, evidence_rel, field="evidence_path"
+        )
         if not evidence_path.is_file():
             raise ContractError(f"missing {evidence_rel}")
         if sha256_file(evidence_path) != attempt.get("evidence_sha256"):
@@ -1215,7 +1303,9 @@ def validate_attempt_semantics(run_root: Path, state: dict[str, Any]) -> None:
         artifact_rel = attempt.get("artifact_path")
         if not isinstance(artifact_rel, str):
             raise ContractError(f"attempt {index} missing artifact_path")
-        artifact_path = run_root / artifact_rel
+        artifact_path = resolve_state_path(
+            run_root, artifact_rel, field="artifact_path"
+        )
         if not artifact_path.is_file():
             raise ContractError(f"missing {artifact_rel}")
         if sha256_file(artifact_path) != attempt.get("artifact_sha256"):
@@ -1647,10 +1737,14 @@ def verify_only(run_root: Path) -> int:
             print(
                 json.dumps(
                     {
+                        "layer": "verifier",
                         "verdict": "GREEN",
                         "status": status,
                         "attempts": len(state.get("attempts") or []),
-                        "note": "BLOCKED terminal consistent; install-level checks are separate",
+                        "note": (
+                            "BLOCKED terminal consistent; smoke/install-level checks and "
+                            "outcome receipts are separate layers"
+                        ),
                     },
                     sort_keys=True,
                 )
@@ -1659,10 +1753,14 @@ def verify_only(run_root: Path) -> int:
         print(
             json.dumps(
                 {
+                    "layer": "verifier",
                     "verdict": "GREEN",
                     "status": status,
                     "attempts": len(state.get("attempts") or []),
-                    "note": "lineage consistent; install-level checks are separate",
+                    "note": (
+                        "lineage consistent; smoke/install-level checks and "
+                        "outcome receipts are separate layers"
+                    ),
                 },
                 sort_keys=True,
             )

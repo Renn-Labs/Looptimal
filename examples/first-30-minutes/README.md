@@ -49,10 +49,20 @@ ceiling. That is **not** a claim of external cryptographic authorship.
 
 | Term | Meaning |
 |-|-|
-| **Install / doctor verdict** | Tooling health (`looptimal-doctor`, structural `verify.sh` without a run root). Proves the package is present, not that an outcome passed. |
+| **Smoke / install / doctor** | Tooling health (`looptimal-doctor`, structural `verify.sh` without a run root). Layer label `smoke`. Proves the package is present, not that an outcome passed. |
 | **Attempt evidence** | Per-attempt JSON with `"kind": "attempt-evidence"`. Inspectable rejection or pass for **one** attempt. **Not** an accepted outcome receipt. |
-| **Verifier verdict** | `GREEN` / `RED` / `BLOCKED` for a single attempt's external check (demo subprocess — not independent approval). |
-| **Accepted outcome receipt** | `looptimal-receipt.json` emitted **only** by `scripts/verify-outcome.py` after a GREEN live re-run, **before** `ACCEPTED` is committed. Never written for RED, EXHAUSTED, or BLOCKED. |
+| **Verifier result** | `GREEN` / `RED` / `BLOCKED` for a single attempt's external check (demo subprocess — not independent approval). Layer label `verifier`. |
+| **Accepted outcome receipt** | `looptimal-receipt.json` emitted **only** by `scripts/verify-outcome.py` after a GREEN live re-run, then re-derived GREEN by product `--check-receipt`, **before** `ACCEPTED` is committed. Layer label `receipt`. Never written for RED, EXHAUSTED, or BLOCKED. |
+
+### Starter → receipt prove bridge
+
+Cold offline path (stdlib + bash, no network):
+
+1. **Smoke** — `bash examples/first-30-minutes/verify.sh` (no run root) → package complete; not a receipt.
+2. **Verifier** — `bash examples/first-30-minutes/run_demo.sh` runs attempt checks → durable RED then GREEN (or EXHAUSTED / BLOCKED).
+3. **Receipt** — only on the ACCEPTED path does `scripts/verify-outcome.py --receipt` emit `outcome/looptimal-receipt.json`, and only after `scripts/verify-outcome.py --check-receipt` re-derives GREEN is that receipt committed and `ACCEPTED` written.
+
+RED / BLOCKED / EXHAUSTED leave **no** committed `looptimal-receipt.json`. A receipt-generation or product-check failure removes any uncommitted published receipt and refuses `ACCEPTED`.
 
 If a file is named like a receipt but carries `"kind": "attempt-evidence"`, it is
 **attempt evidence**. Only `"kind": "looptimal-receipt"` from the product
