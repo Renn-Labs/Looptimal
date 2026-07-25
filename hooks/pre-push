@@ -18,6 +18,14 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# Git injects GIT_DIR / GIT_WORK_TREE / etc. into hooks. Leave them set and every
+# nested `git` call (pytest temp repos, doctors) mutates THIS repo — false REDs
+# and "init" commits on the feature branch. Scrub before any check.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+      GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_QUARANTINE_PATH \
+      GIT_COMMON_DIR GIT_DIR_CEILING || true
+
+
 fail=0
 run_check() {
   local name="$1"
