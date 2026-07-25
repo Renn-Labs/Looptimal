@@ -151,6 +151,29 @@ prove what it claims when it's done — CI for agent done-claims, not another wa
 
 The **Design-loop wizard** also runs as a direct fast-path when you only want a loop blueprint — say "design a loop" or "loop wizard" and Looptimal jumps to Stage 2 without outcome orchestration.
 
+## Compose governed loops into a graph
+
+A loop owns one recurring unit of work. A graph makes several loops understandable as one
+outcome: dependencies, authority boundaries, evidence expectations, and a graph-level acceptance
+gate. Graphs wire the work. Loops keep each node honest. Receipts prove the run.
+
+The starter kit is deliberately practical and deliberately non-authoritative. It can create,
+validate, inspect, and render graph manifests, but it does not execute nodes, approve H1/H2
+actions, or promote evidence. Start from one of three included patterns:
+
+```bash
+looptimal graph starters
+looptimal graph init my-change --starter verified-code-change
+looptimal graph validate my-change
+looptimal graph inspect my-change
+looptimal graph render my-change -o my-change/graph.mmd
+```
+
+The included starters cover a verified code change, customer signal to roadmap, and reviewed
+content publishing. Every loop node pins an immutable `loop://slug@x.y.z` reference and carries
+Goal / State / Verifier / Stop. Human-gated actions remain explicit nodes. See the
+[`graph v1 contract`](references/graph-schema.md) before adapting a starter.
+
 ## Install
 
 ```text

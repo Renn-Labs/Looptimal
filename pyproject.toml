@@ -53,3 +53,9 @@ build-backend = "setuptools.build_meta"
 # the real scripts/*.py files at runtime after install (they are the actual
 # CLI logic; looptimal_cli is only the [project.scripts] entry-point shim).
 packages = ["looptimal_cli", "scripts"]
+
+[tool.setuptools.package-data]
+scripts = [
+    "graph_starters/*/graph.json",
+    "graph_starters/*/README.md",
+]

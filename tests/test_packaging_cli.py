@@ -83,9 +83,26 @@ def test_grouped_looptimal_help_lists_subcommands(monkeypatch, capsys):
     assert exc.value.code == 0
     out = capsys.readouterr().out
     assert "usage: looptimal <command> [args...]" in out
+    assert "graph" in out
     assert "library" in out
     assert "verify-outcome" in out
     assert "doctor" in out
+
+
+def test_grouped_looptimal_graph_dispatches_to_starter_cli(monkeypatch, capsys):
+    monkeypatch.chdir(REPO)
+    monkeypatch.setattr(sys, "argv", ["looptimal", "graph", "starters", "--json"])
+
+    with pytest.raises(SystemExit) as exc:
+        looptimal_cli.looptimal()
+
+    assert exc.value.code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert {row["slug"] for row in payload["starters"]} == {
+        "verified-code-change",
+        "customer-signal-roadmap",
+        "reviewed-content-publish",
+    }
 
 
 def test_grouped_loopprint_unknown_command_exits_2(monkeypatch, capsys):

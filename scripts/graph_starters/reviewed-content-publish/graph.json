@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "id": "reviewed-content-publish",
+  "version": "0.1.0",
+  "name": "Reviewed content publishing",
+  "outcome": "A sourced article passes independent audience review and remains human-approved before publication.",
+  "trust_tier": "starter",
+  "execution": {
+    "mode": "disabled"
+  },
+  "state": {
+    "path": "graphs/reviewed-content-publish/state.jsonl"
+  },
+  "authority": {
+    "default": "tier-a"
+  },
+  "acceptance": {
+    "verifier": {
+      "kind": "reviewer",
+      "reviewer": "content-release-checker",
+      "green_means": "The published artifact matches the approved, sourced draft and records its public URL."
+    },
+    "evidence": [
+      "graphs/reviewed-content-publish/evidence/release-review.md"
+    ]
+  },
+  "stop": {
+    "success": "The release checker accepts the publication evidence after explicit H1 approval.",
+    "max_transitions": 20,
+    "wall_clock_minutes": 240
+  },
+  "evidence_refs": [],
+  "receipt_path": null,
+  "nodes": [
+    {
+      "id": "source-claims",
+      "kind": "loop",
+      "name": "Source the claims",
+      "uses": "loop://content-claim-research@1.0.0",
+      "outcome": "Material claims are source-linked and separated from opinion or inference.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "research-agent",
+        "checker": "claim-auditor"
+      },
+      "contract": {
+        "goal": "Build a claim sheet that distinguishes sourced fact, inference, and opinion.",
+        "state": "graphs/reviewed-content-publish/claims-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "claim-auditor",
+          "green_means": "Every material factual claim has a usable source and unsupported claims are removed or relabeled."
+        },
+        "stop": {
+          "success": "The claim auditor accepts the claim sheet.",
+          "max_iterations": 4
+        }
+      },
+      "evidence": [
+        "claim sheet",
+        "source audit"
+      ]
+    },
+    {
+      "id": "draft-article",
+      "kind": "loop",
+      "name": "Draft the article",
+      "uses": "loop://sourced-article-draft@1.0.0",
+      "outcome": "A useful draft communicates one clear thesis without overstating product proof.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "editorial-writer",
+        "checker": "positioning-editor"
+      },
+      "contract": {
+        "goal": "Write a practical article from the accepted claim sheet and positioning brief.",
+        "state": "graphs/reviewed-content-publish/draft-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "positioning-editor",
+          "green_means": "The draft is useful, coherent, claim-safe, and aligned with the positioning brief."
+        },
+        "stop": {
+          "success": "The positioning editor accepts the draft.",
+          "max_iterations": 5
+        }
+      },
+      "evidence": [
+        "reviewed article draft",
+        "positioning review"
+      ]
+    },
+    {
+      "id": "audience-review",
+      "kind": "loop",
+      "name": "Run bounded audience review",
+      "uses": "loop://audience-simulation-review@1.0.0",
+      "outcome": "A bounded reader panel identifies comprehension, credibility, and usefulness risks.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "audience-panel-runner",
+        "checker": "editorial-critic"
+      },
+      "contract": {
+        "goal": "Challenge the draft across named reader perspectives and resolve material findings.",
+        "state": "graphs/reviewed-content-publish/audience-review-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "editorial-critic",
+          "green_means": "Material panel findings are addressed or explicitly rejected with rationale, without treating simulation as customer proof."
+        },
+        "stop": {
+          "success": "The editorial critic accepts the final review packet.",
+          "max_iterations": 4
+        }
+      },
+      "evidence": [
+        "audience panel report",
+        "final editorial disposition"
+      ]
+    },
+    {
+      "id": "publish-approval",
+      "kind": "human_gate",
+      "name": "Approve public publication",
+      "outcome": "A named human explicitly approves the exact final artifact for public release.",
+      "authority": "H1",
+      "approver": "Chairman",
+      "evidence": [
+        "timestamped approval bound to the final artifact digest"
+      ]
+    },
+    {
+      "id": "publish-content",
+      "kind": "loop",
+      "name": "Publish the approved artifact",
+      "uses": "loop://publish-reviewed-content@1.0.0",
+      "outcome": "The exact approved artifact is published once and its public URL is recorded.",
+      "authority": "H1",
+      "actors": {
+        "maker": "publisher-agent",
+        "checker": "content-release-checker"
+      },
+      "contract": {
+        "goal": "Publish the approved artifact once and capture the resulting public surface.",
+        "state": "graphs/reviewed-content-publish/publish-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "content-release-checker",
+          "green_means": "The public artifact matches the approved digest, appears once, and has a recorded URL."
+        },
+        "stop": {
+          "success": "The release checker accepts the public artifact and URL.",
+          "max_iterations": 2
+        }
+      },
+      "evidence": [
+        "approved artifact digest",
+        "public URL and release check"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "source-claims",
+      "to": "draft-article",
+      "on": "data"
+    },
+    {
+      "from": "draft-article",
+      "to": "audience-review",
+      "on": "success"
+    },
+    {
+      "from": "audience-review",
+      "to": "publish-approval",
+      "on": "success"
+    },
+    {
+      "from": "publish-approval",
+      "to": "publish-content",
+      "on": "approval"
+    }
+  ]
+}

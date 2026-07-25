@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "id": "customer-signal-roadmap",
+  "version": "0.1.0",
+  "name": "Customer signal to roadmap",
+  "outcome": "Traceable customer observations produce a checked, evidence-ranked roadmap proposal.",
+  "trust_tier": "starter",
+  "execution": {
+    "mode": "disabled"
+  },
+  "state": {
+    "path": "graphs/customer-signal-roadmap/state.jsonl"
+  },
+  "authority": {
+    "default": "tier-a"
+  },
+  "acceptance": {
+    "verifier": {
+      "kind": "reviewer",
+      "reviewer": "product-council-checker",
+      "green_means": "Every recommended roadmap item traces to customer evidence and states confidence and disconfirming evidence."
+    },
+    "evidence": [
+      "graphs/customer-signal-roadmap/evidence/roadmap-review.md"
+    ]
+  },
+  "stop": {
+    "success": "The product council checker accepts the evidence-ranked proposal.",
+    "max_transitions": 15,
+    "wall_clock_minutes": 180
+  },
+  "evidence_refs": [],
+  "receipt_path": null,
+  "nodes": [
+    {
+      "id": "collect-observations",
+      "kind": "loop",
+      "name": "Collect customer observations",
+      "uses": "loop://customer-observation-intake@1.0.0",
+      "outcome": "Customer statements and behaviors are recorded with source provenance and consent boundaries.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "customer-research-agent",
+        "checker": "evidence-auditor"
+      },
+      "contract": {
+        "goal": "Create a source-linked set of customer observations without converting assumptions into facts.",
+        "state": "graphs/customer-signal-roadmap/observation-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "evidence-auditor",
+          "green_means": "Each observation is source-linked, redacted where required, and separated from inference."
+        },
+        "stop": {
+          "success": "The evidence auditor accepts the observation set.",
+          "max_iterations": 4
+        }
+      },
+      "evidence": [
+        "source-linked observation register",
+        "consent and redaction review"
+      ]
+    },
+    {
+      "id": "cluster-patterns",
+      "kind": "loop",
+      "name": "Identify repeated pain patterns",
+      "uses": "loop://customer-pattern-synthesis@1.0.0",
+      "outcome": "Repeated pains are ranked with supporting and disconfirming observations.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "synthesis-agent",
+        "checker": "customer-research-critic"
+      },
+      "contract": {
+        "goal": "Rank repeated customer pains without hiding weak or contradictory evidence.",
+        "state": "graphs/customer-signal-roadmap/pattern-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "customer-research-critic",
+          "green_means": "Each pattern has traceable support, confidence, and explicit disconfirming evidence."
+        },
+        "stop": {
+          "success": "The research critic accepts the ranked pattern map.",
+          "max_iterations": 4
+        }
+      },
+      "evidence": [
+        "ranked pain-pattern map",
+        "disconfirming evidence register"
+      ]
+    },
+    {
+      "id": "propose-roadmap",
+      "kind": "loop",
+      "name": "Propose the next roadmap moves",
+      "uses": "loop://evidence-ranked-roadmap@1.0.0",
+      "outcome": "A narrow roadmap proposal ties each move to a customer pattern and learning test.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "product-strategy-agent",
+        "checker": "product-council-checker"
+      },
+      "contract": {
+        "goal": "Translate accepted customer patterns into reversible roadmap proposals with learning gates.",
+        "state": "graphs/customer-signal-roadmap/roadmap-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "product-council-checker",
+          "green_means": "Every proposal names its evidence, confidence, learning test, owner, and stop condition."
+        },
+        "stop": {
+          "success": "The product council checker accepts the roadmap proposal.",
+          "max_iterations": 3
+        }
+      },
+      "evidence": [
+        "evidence-ranked roadmap proposal",
+        "learning-test review"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "collect-observations",
+      "to": "cluster-patterns",
+      "on": "data"
+    },
+    {
+      "from": "cluster-patterns",
+      "to": "propose-roadmap",
+      "on": "success"
+    }
+  ]
+}

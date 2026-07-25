@@ -24,6 +24,7 @@ _LOOPTIMAL_SUBCOMMANDS = {
     "detect": ("looptimal-detect", False),
     "doctor": ("looptimal-doctor", False),
     "frame-ingest": ("looptimal-frame-ingest", False),
+    "graph": ("looptimal-graph", True),
     "library": ("loopprint-library", True),
     "lint": ("looptimal-lint", False),
     "persona-promote": ("looptimal-persona-promote", False),
@@ -92,6 +93,8 @@ def _print_looptimal_usage() -> None:
         "looptimal",
         _LOOPTIMAL_SUBCOMMANDS,
         [
+            "looptimal graph starters",
+            "looptimal graph init my-graph --starter verified-code-change",
             "looptimal verify-outcome --selftest",
             "looptimal library search secret",
             "looptimal lint mission.yaml",

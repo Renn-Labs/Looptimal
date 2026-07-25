@@ -4,6 +4,11 @@ Looptimal's artifacts are plain YAML + POSIX shell. This page is the **canonical
 any runtime can *emit* a conforming loop and any validator can *consume* one without coupling to Looptimal's
 internals.
 
+This page covers loop and campaign artifacts. A composition of immutable loops uses the separate
+[`graph v1 contract`](graph-schema.md), enforced by
+[`scripts/looptimal-graph.py`](../scripts/looptimal-graph.py). A graph does not replace a loop
+spec and the v1 graph tool does not execute either artifact.
+
 > **The executable schema is [`scripts/loopprint-lint.py`](../scripts/loopprint-lint.py).** This page is the
 > prose contract; the linter is the *enforced* one (portable — `python3` + PyYAML, runs anywhere). The two cannot
 > drift: [`tests/test_schema_doc.py`](../tests/test_schema_doc.py) fails the build if this page stops listing any

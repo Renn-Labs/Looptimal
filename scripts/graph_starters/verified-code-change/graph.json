@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "id": "verified-code-change",
+  "version": "0.1.0",
+  "name": "Verified code change",
+  "outcome": "A bounded code change resolves a reproduced defect and passes independent verification.",
+  "trust_tier": "starter",
+  "execution": {
+    "mode": "disabled"
+  },
+  "state": {
+    "path": "graphs/verified-code-change/state.jsonl"
+  },
+  "authority": {
+    "default": "tier-a"
+  },
+  "acceptance": {
+    "verifier": {
+      "kind": "reviewer",
+      "reviewer": "independent-release-checker",
+      "green_means": "The original defect is fixed, scoped acceptance passes, and no material regression is found."
+    },
+    "evidence": [
+      "graphs/verified-code-change/evidence/final-review.md"
+    ]
+  },
+  "stop": {
+    "success": "The graph-level independent checker accepts the bounded change.",
+    "max_transitions": 12,
+    "wall_clock_minutes": 90
+  },
+  "evidence_refs": [],
+  "receipt_path": null,
+  "nodes": [
+    {
+      "id": "reproduce-defect",
+      "kind": "loop",
+      "name": "Reproduce the defect",
+      "uses": "loop://reproduce-defect@1.0.0",
+      "outcome": "A deterministic failing reproduction isolates the reported defect.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "debugger-agent",
+        "checker": "test-engineer"
+      },
+      "contract": {
+        "goal": "Create a deterministic failing test for the reported behavior.",
+        "state": "graphs/verified-code-change/reproduce-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "test-engineer",
+          "green_means": "The reproduction fails for the expected reason and isolates the reported behavior."
+        },
+        "stop": {
+          "success": "The checker accepts the deterministic reproduction.",
+          "max_iterations": 3
+        }
+      },
+      "evidence": [
+        "failing reproduction output",
+        "reproduction scope review"
+      ]
+    },
+    {
+      "id": "implement-change",
+      "kind": "loop",
+      "name": "Implement the bounded change",
+      "uses": "loop://bounded-code-change@1.0.0",
+      "outcome": "The smallest scoped implementation resolves the reproduced failure.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "implementation-agent",
+        "checker": "scope-reviewer"
+      },
+      "contract": {
+        "goal": "Resolve the accepted reproduction without unrelated behavior changes.",
+        "state": "graphs/verified-code-change/implementation-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "scope-reviewer",
+          "green_means": "The diff is bounded, coherent, and addresses the accepted reproduction."
+        },
+        "stop": {
+          "success": "The scope reviewer accepts the implementation.",
+          "max_iterations": 4
+        }
+      },
+      "evidence": [
+        "bounded implementation diff",
+        "scope review"
+      ]
+    },
+    {
+      "id": "verify-change",
+      "kind": "loop",
+      "name": "Verify the outcome",
+      "uses": "loop://independent-code-verification@1.0.0",
+      "outcome": "Focused and regression checks independently prove the bounded outcome.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "test-runner",
+        "checker": "independent-release-checker"
+      },
+      "contract": {
+        "goal": "Re-run scoped acceptance and regression checks against the final tree.",
+        "state": "graphs/verified-code-change/verification-state.md",
+        "verifier": {
+          "kind": "command",
+          "command": "python -m pytest -q",
+          "green_means": "The configured final-tree test suite exits zero."
+        },
+        "stop": {
+          "success": "The final-tree test command exits zero and the checker accepts the evidence.",
+          "max_iterations": 2
+        }
+      },
+      "evidence": [
+        "final-tree test output",
+        "independent release review"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "reproduce-defect",
+      "to": "implement-change",
+      "on": "success"
+    },
+    {
+      "from": "implement-change",
+      "to": "verify-change",
+      "on": "success"
+    }
+  ]
+}
