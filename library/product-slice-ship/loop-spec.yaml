@@ -1,0 +1,32 @@
+schema_version: 1
+slug: product-slice-ship
+created: 2026-07-25
+pattern: hybrid
+catalog:
+  attribution: Renn Labs
+  license: MIT
+  loop_store:
+    featured: true
+    trust_tier: starter
+    domains: [engineering]
+goal: >
+  A framed product slice is committed on an isolated branch without sweeping concurrent work.
+state:
+  path: loops/product-slice-ship/state.md
+  records:
+    - attempt notes
+    - verifier result
+    - next action
+verifier:
+  kind: lint
+  command: "git status --porcelain | test -z "$(cat)""
+  green_means: "Worktree is clean after the intentional commit."
+stop:
+  success: "verifier GREEN"
+  max_iterations: 5
+  budget:
+    wall_clock_minutes: 120
+  halt_file: loops/product-slice-ship/HALT
+autonomy: checkpoint
+human_checkpoints:
+  - "Do not treat self-assessment as GREEN"

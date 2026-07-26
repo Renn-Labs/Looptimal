@@ -1,0 +1,32 @@
+schema_version: 1
+slug: beachhead-job-select
+created: 2026-07-25
+pattern: hybrid
+catalog:
+  attribution: Renn Labs
+  license: MIT
+  loop_store:
+    featured: true
+    trust_tier: starter
+    domains: [gtm]
+goal: >
+  One segment and one recurring job are written with J1 definition and a 14-day kill rule.
+state:
+  path: loops/beachhead-job-select/state.md
+  records:
+    - attempt notes
+    - verifier result
+    - next action
+verifier:
+  kind: lint
+  command: "test -f beachhead-packet.md && grep -q J1 beachhead-packet.md"
+  green_means: "Beachhead packet exists and defines J1."
+stop:
+  success: "verifier GREEN"
+  max_iterations: 5
+  budget:
+    wall_clock_minutes: 120
+  halt_file: loops/beachhead-job-select/HALT
+autonomy: checkpoint
+human_checkpoints:
+  - "Do not treat self-assessment as GREEN"

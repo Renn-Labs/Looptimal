@@ -12,7 +12,10 @@ All notable changes to Looptimal are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
-- **Governed graph starter kit** - three packaged graph patterns plus `looptimal graph` commands
+- **Key Loop Store graph starters** — `product-development-system` (frame → isolate → verify → H2 →
+  public main) and `gtm-lightning-pmf` (beachhead → proof sprint → pilot demand rows → H1 wave).
+  Packaged library loop blueprints under `library/` for the corresponding `loop://` pins.
+- **Governed graph starter kit** - packaged graph patterns plus `looptimal graph` commands
   to create, fail-closed validate, inspect, and render compositions of immutable loops and human
   gates. Graph v1 is explicitly non-executing and cannot clear authority or promote evidence.
 

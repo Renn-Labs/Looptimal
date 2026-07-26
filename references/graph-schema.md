@@ -89,6 +89,8 @@ cycles. The returned order is deterministic.
 | `verified-code-change` | Reproduce, implement, and independently verify a bounded code change. |
 | `customer-signal-roadmap` | Collect customer observations, identify a repeated pattern, and produce a checked roadmap proposal. |
 | `reviewed-content-publish` | Source claims, draft, simulate audience review, require H1 approval, then represent publication as an H1 node. |
+| `product-development-system` | Frame a product slice, implement in isolation, independently verify, require H2 approval, land on public main. |
+| `gtm-lightning-pmf` | Select beachhead job, proof sprint, pilot demand rows, require H1 before public-live amplification wave. |
 
 The starter verifier commands and reviewer identities are examples that must be bound to real
 local tools and actors before a graph can honestly move beyond `starter`.

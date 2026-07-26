@@ -159,19 +159,20 @@ gate. Graphs wire the work. Loops keep each node honest. Receipts prove the run.
 
 The starter kit is deliberately practical and deliberately non-authoritative. It can create,
 validate, inspect, and render graph manifests, but it does not execute nodes, approve H1/H2
-actions, or promote evidence. Start from one of three included patterns:
+actions, or promote evidence. Start from a packaged pattern:
 
 ```bash
 looptimal graph starters
-looptimal graph init my-change --starter verified-code-change
+looptimal graph init my-change --starter product-development-system
 looptimal graph validate my-change
 looptimal graph inspect my-change
 looptimal graph render my-change -o my-change/graph.mmd
 ```
 
-The included starters cover a verified code change, customer signal to roadmap, and reviewed
-content publishing. Every loop node pins an immutable `loop://slug@x.y.z` reference and carries
-Goal / State / Verifier / Stop. Human-gated actions remain explicit nodes. See the
+Included starters: verified code change, customer signal to roadmap, reviewed content publishing,
+**product development system** (key product/dev Loop Store starter), and **GTM lightning PMF hunt**
+(key GTM Loop Store starter). Every loop node pins an immutable `loop://slug@x.y.z` reference and
+carries Goal / State / Verifier / Stop. Human-gated actions remain explicit nodes. See the
 [`graph v1 contract`](references/graph-schema.md) before adapting a starter.
 
 ## Install

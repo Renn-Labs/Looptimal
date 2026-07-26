@@ -1,0 +1,32 @@
+schema_version: 1
+slug: pilot-demand-row
+created: 2026-07-25
+pattern: hybrid
+catalog:
+  attribution: Renn Labs
+  license: MIT
+  loop_store:
+    featured: true
+    trust_tier: starter
+    domains: [gtm]
+goal: >
+  External pilot reactions are logged as source-bound demand rows; dogfood is isolated.
+state:
+  path: loops/pilot-demand-row/state.md
+  records:
+    - attempt notes
+    - verifier result
+    - next action
+verifier:
+  kind: lint
+  command: "test -f pilot-log.md && grep -q source_ref pilot-log.md"
+  green_means: "Pilot log contains at least one source_ref and excludes dogfood from external counts."
+stop:
+  success: "verifier GREEN"
+  max_iterations: 5
+  budget:
+    wall_clock_minutes: 120
+  halt_file: loops/pilot-demand-row/HALT
+autonomy: checkpoint
+human_checkpoints:
+  - "Do not treat self-assessment as GREEN"

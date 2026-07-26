@@ -102,6 +102,8 @@ def test_grouped_looptimal_graph_dispatches_to_starter_cli(monkeypatch, capsys):
         "verified-code-change",
         "customer-signal-roadmap",
         "reviewed-content-publish",
+        "product-development-system",
+        "gtm-lightning-pmf",
     }
 
 

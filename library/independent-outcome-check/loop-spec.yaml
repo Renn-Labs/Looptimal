@@ -1,0 +1,32 @@
+schema_version: 1
+slug: independent-outcome-check
+created: 2026-07-25
+pattern: hybrid
+catalog:
+  attribution: Renn Labs
+  license: MIT
+  loop_store:
+    featured: true
+    trust_tier: starter
+    domains: [engineering]
+goal: >
+  An independent checker re-runs the product suite and doctors outside the implementer context.
+state:
+  path: loops/independent-outcome-check/state.md
+  records:
+    - attempt notes
+    - verifier result
+    - next action
+verifier:
+  kind: lint
+  command: "python3 -m pytest tests/ -q && python3 scripts/looptimal-doctor.py"
+  green_means: "pytest and doctor both exit 0."
+stop:
+  success: "verifier GREEN"
+  max_iterations: 5
+  budget:
+    wall_clock_minutes: 120
+  halt_file: loops/independent-outcome-check/HALT
+autonomy: checkpoint
+human_checkpoints:
+  - "Do not treat self-assessment as GREEN"

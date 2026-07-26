@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "id": "product-development-system",
+  "version": "0.1.0",
+  "name": "Product development system",
+  "outcome": "A bounded product slice is implemented in isolation, independently checked, and only reaches public product main after an explicit H2 approval with fail-closed evidence.",
+  "trust_tier": "starter",
+  "execution": {
+    "mode": "disabled"
+  },
+  "state": {
+    "path": "graphs/product-development-system/state.jsonl"
+  },
+  "authority": {
+    "default": "tier-a"
+  },
+  "acceptance": {
+    "verifier": {
+      "kind": "reviewer",
+      "reviewer": "independent-release-checker",
+      "green_means": "Remote public main contains only the approved slice; pre-push suite was GREEN; no unrelated concurrent work was swept; H2 approval is bound to the exact commit digest."
+    },
+    "evidence": [
+      "graphs/product-development-system/evidence/release-packet.md",
+      "graphs/product-development-system/evidence/h2-approval.md"
+    ]
+  },
+  "stop": {
+    "success": "The independent release checker accepts the H2 packet and public main digest match.",
+    "max_transitions": 16,
+    "wall_clock_minutes": 240
+  },
+  "evidence_refs": [],
+  "receipt_path": null,
+  "nodes": [
+    {
+      "id": "frame-slice",
+      "kind": "loop",
+      "name": "Frame the product slice",
+      "uses": "loop://product-slice-frame@1.0.0",
+      "outcome": "One outcome, acceptance criteria, and blast radius are written before implementation starts.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "product-engineer",
+        "checker": "scope-reviewer"
+      },
+      "contract": {
+        "goal": "Seal a one-slice goal with external acceptance criteria and explicit non-goals.",
+        "state": "graphs/product-development-system/frame-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "scope-reviewer",
+          "green_means": "Goal is one sentence, acceptance is machine-or-reviewer checkable, and NOT-build / out-of-scope items are listed."
+        },
+        "stop": {
+          "success": "Scope reviewer accepts the frame packet.",
+          "max_iterations": 3
+        }
+      },
+      "evidence": [
+        "slice frame",
+        "acceptance criteria",
+        "out-of-scope list"
+      ]
+    },
+    {
+      "id": "implement-isolated",
+      "kind": "loop",
+      "name": "Implement in an isolated worktree",
+      "uses": "loop://product-slice-ship@1.0.0",
+      "outcome": "The slice lands as a clean commit on a dedicated branch/worktree without sweeping concurrent work.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "implementation-agent",
+        "checker": "diff-scope-reviewer"
+      },
+      "contract": {
+        "goal": "Implement only the framed slice on an isolated branch with maker\u2260checker review of the diff scope.",
+        "state": "graphs/product-development-system/implement-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "diff-scope-reviewer",
+          "green_means": "Diff matches the frame; no unrelated files; no secrets; worktree remains clean after commit."
+        },
+        "stop": {
+          "success": "Diff-scope reviewer accepts the implementation commit.",
+          "max_iterations": 5
+        }
+      },
+      "evidence": [
+        "commit sha",
+        "diff summary",
+        "scope review"
+      ]
+    },
+    {
+      "id": "independent-verify",
+      "kind": "loop",
+      "name": "Run independent verification",
+      "uses": "loop://independent-outcome-check@1.0.0",
+      "outcome": "Tier-0 suite and product checks are GREEN outside the implementer context.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "implementation-agent",
+        "checker": "independent-release-checker"
+      },
+      "contract": {
+        "goal": "Re-run pytest, doctors, and any slice-specific checks from a clean tree; implementer self-report is not sufficient.",
+        "state": "graphs/product-development-system/verify-state.md",
+        "verifier": {
+          "kind": "command",
+          "command": "python3 -m pytest tests/ -q && python3 scripts/looptimal-doctor.py",
+          "green_means": "pytest and looptimal-doctor exit 0 on the candidate tree."
+        },
+        "stop": {
+          "success": "Independent checker records GREEN suite results.",
+          "max_iterations": 4
+        }
+      },
+      "evidence": [
+        "pytest transcript",
+        "doctor transcript"
+      ]
+    },
+    {
+      "id": "h2-approval",
+      "kind": "human_gate",
+      "name": "Approve product-public push (H2)",
+      "outcome": "A named human explicitly approves pushing the exact candidate commit to public product main.",
+      "authority": "H2",
+      "approver": "Chairman",
+      "evidence": [
+        "timestamped H2 approval bound to commit digest",
+        "product-push-go marker or human_decision id"
+      ]
+    },
+    {
+      "id": "public-main",
+      "kind": "loop",
+      "name": "Land on public main",
+      "uses": "loop://product-public-main@1.0.0",
+      "outcome": "origin/main advances to the approved commit without force-push or unrelated commits.",
+      "authority": "H2",
+      "actors": {
+        "maker": "release-operator",
+        "checker": "independent-release-checker"
+      },
+      "contract": {
+        "goal": "Push only the approved commit to public main and verify remote digest match.",
+        "state": "graphs/product-development-system/public-main-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "independent-release-checker",
+          "green_means": "origin/main equals the approved commit; no force-push; post-push smoke for the slice still GREEN."
+        },
+        "stop": {
+          "success": "Remote main digest verified.",
+          "max_iterations": 2
+        }
+      },
+      "evidence": [
+        "remote main sha",
+        "post-push smoke"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "frame-slice",
+      "to": "implement-isolated",
+      "on": "success"
+    },
+    {
+      "from": "implement-isolated",
+      "to": "independent-verify",
+      "on": "success"
+    },
+    {
+      "from": "independent-verify",
+      "to": "h2-approval",
+      "on": "success"
+    },
+    {
+      "from": "h2-approval",
+      "to": "public-main",
+      "on": "approval"
+    }
+  ]
+}

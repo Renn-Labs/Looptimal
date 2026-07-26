@@ -32,6 +32,8 @@ def test_all_packaged_starters_are_structurally_green():
     slugs = sorted(path.name for path in STARTERS.iterdir() if path.is_dir())
     assert slugs == [
         "customer-signal-roadmap",
+        "gtm-lightning-pmf",
+        "product-development-system",
         "reviewed-content-publish",
         "verified-code-change",
     ]
@@ -155,6 +157,8 @@ def test_starters_json_lists_packaged_patterns(capsys):
         "verified-code-change",
         "customer-signal-roadmap",
         "reviewed-content-publish",
+        "product-development-system",
+        "gtm-lightning-pmf",
     }
     assert all(row["trust_tier"] == "starter" for row in payload["starters"])
 
@@ -209,7 +213,7 @@ def test_starters_fails_closed_when_package_assets_are_missing(tmp_path, monkeyp
     payload = json.loads(capsys.readouterr().out)
     assert payload["verdict"] == "RED"
     assert payload["starters"] == []
-    assert len(payload["errors"]) == 3
+    assert len(payload["errors"]) == 5
 
 
 def test_inspect_returns_deterministic_order_and_gate(capsys):

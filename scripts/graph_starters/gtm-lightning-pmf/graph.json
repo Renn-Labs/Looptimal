@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "id": "gtm-lightning-pmf",
+  "version": "0.1.0",
+  "name": "GTM lightning PMF hunt",
+  "outcome": "A single beachhead job produces external job-activations and unforced pull signals, with any public-live amplification gated by H1 and claim-safe review.",
+  "trust_tier": "starter",
+  "execution": {
+    "mode": "disabled"
+  },
+  "state": {
+    "path": "graphs/gtm-lightning-pmf/state.jsonl"
+  },
+  "authority": {
+    "default": "tier-a"
+  },
+  "acceptance": {
+    "verifier": {
+      "kind": "reviewer",
+      "reviewer": "pmf-demand-checker",
+      "green_means": "Scoreboard shows source-bound external J1/J2 or CAO rows for one segment\u00d7job cell; T0 vanity is not used as success; any live publish has guardian + H1 evidence."
+    },
+    "evidence": [
+      "graphs/gtm-lightning-pmf/evidence/demand-packet.md",
+      "graphs/gtm-lightning-pmf/evidence/pilot-log.md"
+    ]
+  },
+  "stop": {
+    "success": "PMF checker accepts concentration evidence for one cell, or an explicit RED narrow/kill decision is recorded.",
+    "max_transitions": 20,
+    "wall_clock_minutes": 10080
+  },
+  "evidence_refs": [],
+  "receipt_path": null,
+  "nodes": [
+    {
+      "id": "select-beachhead",
+      "kind": "loop",
+      "name": "Select beachhead job and segment",
+      "uses": "loop://beachhead-job-select@1.0.0",
+      "outcome": "One segment and one recurring job are pre-registered with kill clocks and demotion rules.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "cmo-strategist",
+        "checker": "pmf-demand-checker"
+      },
+      "contract": {
+        "goal": "Name one segment\u00d7job cell, a 14-day kill rule, and what counts as J1 vs vanity.",
+        "state": "graphs/gtm-lightning-pmf/beachhead-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "pmf-demand-checker",
+          "green_means": "Segment, job, J1 definition, and 14-day RED rule are explicit and claim-safe."
+        },
+        "stop": {
+          "success": "PMF checker accepts the beachhead packet.",
+          "max_iterations": 3
+        }
+      },
+      "evidence": [
+        "beachhead packet",
+        "kill clocks"
+      ]
+    },
+    {
+      "id": "proof-sprint",
+      "kind": "loop",
+      "name": "Run product try-path proof sprint",
+      "uses": "loop://product-try-path-proof@1.0.0",
+      "outcome": "Install pin and one golden job path are honest and runnable without founder heroics.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "product-engineer",
+        "checker": "activation-reviewer"
+      },
+      "contract": {
+        "goal": "Make the advertised install path match shipped surface and document the golden job path.",
+        "state": "graphs/gtm-lightning-pmf/proof-sprint-state.md",
+        "verifier": {
+          "kind": "command",
+          "command": "python3 scripts/looptimal-doctor.py",
+          "green_means": "Doctor HEALTHY and README pin notes match available commands."
+        },
+        "stop": {
+          "success": "Activation reviewer accepts the try-path packet.",
+          "max_iterations": 4
+        }
+      },
+      "evidence": [
+        "try-path notes",
+        "doctor transcript"
+      ]
+    },
+    {
+      "id": "pilot-contacts",
+      "kind": "loop",
+      "name": "Run controlled pilot contacts",
+      "uses": "loop://pilot-demand-row@1.0.0",
+      "outcome": "15\u201330 named external contacts receive a map/starter for the beachhead job; reactions are logged as external demand rows.",
+      "authority": "tier-a",
+      "actors": {
+        "maker": "founder-concierge",
+        "checker": "pmf-demand-checker"
+      },
+      "contract": {
+        "goal": "Personal outreach only; log J1/J2/pull/WTP with source refs; never count dogfood as external.",
+        "state": "graphs/gtm-lightning-pmf/pilot-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "pmf-demand-checker",
+          "green_means": "Every external row has source_refs; dogfood isolated; concentration or 14-day RED is decided."
+        },
+        "stop": {
+          "success": "Pilot packet accepted or RED kill recorded.",
+          "max_iterations": 6
+        }
+      },
+      "evidence": [
+        "pilot contact list hash",
+        "external demand rows",
+        "concentration note"
+      ]
+    },
+    {
+      "id": "h1-wave-approval",
+      "kind": "human_gate",
+      "name": "Approve public-live wave (H1)",
+      "outcome": "Chairman approves a specific claim-safe artifact set for public-live amplification after pilot GREEN.",
+      "authority": "H1",
+      "approver": "Chairman",
+      "evidence": [
+        "human_decision id",
+        "guardian receipt hash",
+        "exact artifact digests"
+      ]
+    },
+    {
+      "id": "amplify-wave",
+      "kind": "loop",
+      "name": "Run evidence-backed amplification wave",
+      "uses": "loop://free-the-loops-wave@1.0.0",
+      "outcome": "A time-boxed wave amplifies the proven beachhead path without inventing verified-corpus claims.",
+      "authority": "H1",
+      "actors": {
+        "maker": "cmo-operator",
+        "checker": "guardian-reviewer"
+      },
+      "contract": {
+        "goal": "Publish only guardian-cleared artifacts; measure J1 conversion, not T0 vanity alone.",
+        "state": "graphs/gtm-lightning-pmf/wave-state.md",
+        "verifier": {
+          "kind": "reviewer",
+          "reviewer": "guardian-reviewer",
+          "green_means": "Every live asset matches cleared digests; no claim denylist breach; post-wave demand rows updated."
+        },
+        "stop": {
+          "success": "Guardian accepts wave evidence packet.",
+          "max_iterations": 3
+        }
+      },
+      "evidence": [
+        "published URLs",
+        "guardian receipts",
+        "post-wave scoreboard delta"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "select-beachhead",
+      "to": "proof-sprint",
+      "on": "success"
+    },
+    {
+      "from": "proof-sprint",
+      "to": "pilot-contacts",
+      "on": "success"
+    },
+    {
+      "from": "pilot-contacts",
+      "to": "h1-wave-approval",
+      "on": "success"
+    },
+    {
+      "from": "h1-wave-approval",
+      "to": "amplify-wave",
+      "on": "approval"
+    }
+  ]
+}

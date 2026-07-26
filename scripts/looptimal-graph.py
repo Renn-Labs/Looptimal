@@ -30,6 +30,8 @@ SCHEMA_VERSION = 1
 STARTERS_DIR = Path(__file__).resolve().parent / "graph_starters"
 EXPECTED_STARTERS = (
     "customer-signal-roadmap",
+    "gtm-lightning-pmf",
+    "product-development-system",
     "reviewed-content-publish",
     "verified-code-change",
 )
