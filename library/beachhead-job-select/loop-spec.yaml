@@ -1,5 +1,6 @@
 schema_version: 1
 slug: beachhead-job-select
+version: 1.0.0
 created: 2026-07-25
 pattern: hybrid
 catalog:
@@ -19,8 +20,8 @@ state:
     - next action
 verifier:
   kind: lint
-  command: "test -f beachhead-packet.md && grep -q J1 beachhead-packet.md"
-  green_means: "Beachhead packet exists and defines J1."
+  command: "bash verify.sh"
+  green_means: "Placeholder verify.sh is RED until a real external gate is bound."
 stop:
   success: "verifier GREEN"
   max_iterations: 5

@@ -1,5 +1,6 @@
 schema_version: 1
 slug: product-slice-ship
+version: 1.0.0
 created: 2026-07-25
 pattern: hybrid
 catalog:
@@ -19,8 +20,8 @@ state:
     - next action
 verifier:
   kind: lint
-  command: "git status --porcelain | test -z "$(cat)""
-  green_means: "Worktree is clean after the intentional commit."
+  command: "bash verify.sh"
+  green_means: "Placeholder verify.sh is RED until a real external gate is bound."
 stop:
   success: "verifier GREEN"
   max_iterations: 5
