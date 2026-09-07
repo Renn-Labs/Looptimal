@@ -19,6 +19,12 @@ All notable changes to Looptimal are documented here. The format is based on
   to create, fail-closed validate, inspect, and render compositions of immutable loops and human
   gates. Graph v1 is explicitly non-executing and cannot clear authority or promote evidence.
 
+### Fixed
+- Library starter `loop-spec.yaml` files that graph starters pin at `loop://…@1.0.0`
+  (`beachhead-job-select`, `independent-outcome-check`, `pilot-demand-row`, `product-slice-ship`)
+  now declare `version: 1.0.0` and point `verifier.command` at the honest `bash verify.sh`
+  placeholder, restoring `library-lint` after the product-slice-ship nested-quote YAML break.
+
 ## [2.2.0] — 2026-07-08
 
 ### Added

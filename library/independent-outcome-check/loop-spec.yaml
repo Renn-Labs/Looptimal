@@ -1,5 +1,6 @@
 schema_version: 1
 slug: independent-outcome-check
+version: 1.0.0
 created: 2026-07-25
 pattern: hybrid
 catalog:
@@ -19,8 +20,8 @@ state:
     - next action
 verifier:
   kind: lint
-  command: "python3 -m pytest tests/ -q && python3 scripts/looptimal-doctor.py"
-  green_means: "pytest and doctor both exit 0."
+  command: "bash verify.sh"
+  green_means: "Placeholder verify.sh is RED until a real external gate is bound."
 stop:
   success: "verifier GREEN"
   max_iterations: 5

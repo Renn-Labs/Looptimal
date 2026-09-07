@@ -1,5 +1,6 @@
 schema_version: 1
 slug: pilot-demand-row
+version: 1.0.0
 created: 2026-07-25
 pattern: hybrid
 catalog:
@@ -19,8 +20,8 @@ state:
     - next action
 verifier:
   kind: lint
-  command: "test -f pilot-log.md && grep -q source_ref pilot-log.md"
-  green_means: "Pilot log contains at least one source_ref and excludes dogfood from external counts."
+  command: "bash verify.sh"
+  green_means: "Placeholder verify.sh is RED until a real external gate is bound."
 stop:
   success: "verifier GREEN"
   max_iterations: 5
