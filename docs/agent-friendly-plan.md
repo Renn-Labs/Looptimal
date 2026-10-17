@@ -53,15 +53,19 @@ Measured on `origin/main` at `e16259d` (88 commits, 14 pull requests, 6 issues).
   journal. `SKILL.md` is the product skill (263 lines), not a contributor map.
 - `scripts/` has 8 `loopprint-*.py` files and 7 `looptimal-*.py` files. Both
   `lint` and `doctor` exist at each altitude.
+- Three `/how` slices after the first draft confirmed the same classes on the
+  current tree. Doctors do not inspect the path you meant. Docs-check does not
+  read `RELEASE.md` or `references/pipeline.md`. Stage 6 will GREEN a sealed
+  script that always exits 0.
 
 ## Pitfall classes
 
 A class counts once it has happened twice. Counts below are distinct
 corrections or live failures, not file hits.
 
-### 1. Wrong altitude, 5 plus one live prototype
+### 1. Wrong altitude, 8 plus one live prototype
 
-An agent treats `lint` as one tool. It is two.
+An agent treats `lint` and `doctor` as one tool each. Each is two.
 
 | Evidence | What happened |
 | --- | --- |
@@ -70,6 +74,9 @@ An agent treats `lint` as one tool. It is two.
 | `CONTRIBUTING.md` | A whole section exists so people do not rename prefixes ad hoc. |
 | Issue #9 | Still titled as a `loopprint` CLI after the product is Looptimal. |
 | Prototype `wrong_lint.py` | Wrong lint never names the other lint. |
+| `SKILL.md:224` and `README.md:286` | `looptimal-doctor --fix` is said to relink a dangling symlink. Relink lives only in `loopprint-doctor`. Outcome `--fix` is chmod. |
+| `references/pipeline.md:17` and `:48` | Agents are told to run `contract-lint` or `looptimal-lint.py --stage frame`. Neither exists. |
+| Doctor walk | Each doctor only walks its own file list. The other doctor can print HEALTHY while the layer you meant is broken. |
 
 Live observation, run from this branch.
 
@@ -89,9 +96,11 @@ loop-spec, run `loopprint-lint`" or "this is a mission, run `looptimal-lint`."
 
 `looptimal_cli/__init__.py` already groups commands, then still maps
 `looptimal lint` to `looptimal-lint` and `loopprint lint` to `loopprint-lint`
-with no artifact check.
+with no artifact check. `looptimal library` and `loopprint library` already
+dispatch the same script. The grouped CLI hid one verb and left `lint` and
+`doctor` split.
 
-### 2. Unearned GREEN or a masked RED, 6
+### 2. Unearned GREEN or a masked RED, 8
 
 Erik's reviews keep returning to honesty of status.
 
@@ -103,14 +112,16 @@ Erik's reviews keep returning to honesty of status.
 | Docs-check header | The v2.0.0 quickstart pinned a tag that could not run the code it advertised. |
 | `fa77d37` | First-30-minutes RED was bound to attempt number, not a frozen source-manifest mismatch. |
 | `649e01e` | The same demo needed a second harden pass. |
+| Split regexes | `loopprint-lint.py` `TRIVIAL_GATE` and `SELF_GRADE` are a subset of `_common.py` `NOOP_COMMANDS` and `SELF_GRADE_RE`. `echo`, `cat`, `ls`, and `python3 -c` pass loop-spec lint. |
+| Stage 6 path | `verify-outcome.py` re-runs the sealed command. It does not re-check maker versus checker identity. A sealed `sys.exit(0)` is GREEN. `green_means` is lint-only. |
 
 The product already encodes this for loop-specs. `tests/golden/red/` has
 `selfgrade`, `trivial-gate`, `empty-verifier`, `placeholder-goal`, and
-`no-stop`. `scripts/_common.py` `NOOP_COMMANDS` and `loopprint-lint.py`
-`TRIVIAL_GATE` reject `true` and `exit 0`. The repo's own status paths still
-learn this the hard way.
+`no-stop`. Those fixtures do not cover the wider `_common.py` noop set, and
+they do not run at Stage 6. The repo's own status paths still learn this the
+hard way.
 
-### 3. Docs that point at a tree the reader does not have, 4
+### 3. Docs that point at a tree the reader does not have, 7
 
 | Evidence | What happened |
 | --- | --- |
@@ -118,6 +129,9 @@ learn this the hard way.
 | `affbdae` | Shipped feature described as future work. |
 | `#18` / `ef329d9` | v2.0.0 release-surface reconcile. Stale-doc hygiene. |
 | `beed6f6` | `looptimal-docs-check.py` added for the two classes above. |
+| `RELEASE.md:21` | Still calls the keyed framer hash "the planned hardening" after it shipped. Docs-check never opens `RELEASE.md`. |
+| `references/pipeline.md` | Names `contract-lint` and `--stage frame`. No such script or flag. |
+| Scan set | Docs-check reads `README.md` and `SECURITY.md` only. `CONTRIBUTING.md`, `SKILL.md`, and `CLAUDE.md` are invisible to it. |
 
 The catalog in `scripts/looptimal-docs-check.py` has one forward-reference
 entry plus README `@vX.Y.Z` pin matching. Prototype `docs_untracked_path.py`
@@ -176,9 +190,9 @@ and illegal to parse.
 
 | Class | Highest tier that works | Why not higher | Why not lower |
 | --- | --- | --- | --- |
-| Wrong altitude | Architecture. Parse the file at the CLI boundary and route, or name the other lint. | A mass rename still leaves two `lint` commands. Prototype `dispatch.py` shows keys already separate the shapes. | `CONTRIBUTING.md` already explains the prefixes. The prototype still fails. |
-| Unearned GREEN | Architecture plus types. One status owner. Illegal combinations cannot be printed. | Already partly done for loop-specs via golden red fixtures. Repo status paths are the remainder. | Another paragraph in `SECURITY.md` will not stop `-WhatIf` or a grace window. |
-| Docs that lie | Static analysis. Grow the docs-check catalog with a check that fails on `b9a1754` text. | The path is prose. There is no type to brand. | Writing "do not point at `.claude/`" is the instruction they already had. |
+| Wrong altitude | Architecture. Parse the file at the CLI boundary and route, or name the other lint. Doctors must refuse to print HEALTHY for the other layer. | A mass rename still leaves two `lint` commands. Prototype `dispatch.py` shows keys already separate the shapes. | `CONTRIBUTING.md` already explains the prefixes. The prototype still fails. |
+| Unearned GREEN | Architecture plus types. One status owner. One shared noop and self-grade table. Illegal combinations cannot be printed. | Already partly done for loop-specs via golden red fixtures. Stage 6 still GREENS a sealed `exit 0`. | Another paragraph in `SECURITY.md` will not stop `-WhatIf` or a grace window. |
+| Docs that lie | Static analysis. Grow the docs-check catalog and the file list it reads. Fail on `b9a1754` text, on `RELEASE.md` "planned hardening", and on a named command that is not a console script. | The path is prose. There is no type to brand. | Writing "do not point at `.claude/`" is the instruction they already had. |
 | Host-dependent tests | Tests plus a small CI lint. Fail if a test uses `Path.home()` or implicit profile resolution without an isolated `HOME`. | Not a domain type. | Docs in `CONTRIBUTING.md` did not stop `2061e89`. |
 | Shell-out | Boundary discipline. No `cmd.exe` / `shell=True` / interpolated command strings. | PR #12 already picked this tier. | A comment above `mklink` would not have closed the quote. |
 | Baseline churn | Architecture of the check. Key findings on symbols, not line numbers, or refresh the baseline in the same commit that moves the lines. | Line-number baselines cannot survive edits. | Telling agents to "update the baseline" is a repeat of `d3fd6af`. |
@@ -214,11 +228,16 @@ At the CLI boundary in `looptimal_cli` and at the top of
    command to run, including the path.
 4. If classification is unknown, print both owners and the keys that decide.
 
+Do the same for doctors. A doctor that did not inspect the layer you asked
+about must not print HEALTHY. Unknown verb or a path that belongs to the
+other altitude names the other doctor.
+
 **Files.**
 
 - Edit `looptimal_cli/__init__.py`.
 - Edit `scripts/looptimal-lint.py`.
 - Edit `scripts/loopprint-lint.py`.
+- Edit `scripts/looptimal-doctor.py` and `scripts/loopprint-doctor.py`.
 - Create `scripts/_artifact.py` for the classifier. One owner. Both lints
   import it.
 - Test `tests/test_artifact_dispatch.py`.
@@ -252,7 +271,7 @@ python3 scripts/looptimal-lint.py examples/issue-to-pr-bugfix/mission.yaml
 A catalog of `{phrase, code-evidence}` pairs. It only covers two historical
 bugs. The next agent will repeat `b9a1754` because nothing fails.
 
-Add two checks, each proven on a reconstructed past file.
+Add four checks, each proven on a reconstructed past file or a live line.
 
 1. Tracked Markdown or hook text that names a repo-relative path which is
    gitignored or absent. Fixture is the `b9a1754` sentence. Today's check is
@@ -261,18 +280,28 @@ Add two checks, each proven on a reconstructed past file.
    `~/.claude/skills/loopprint` as the current name. That string is valid in
    `CHANGELOG.md` history. It is stale in `references/troubleshooting.md`
    rows that describe a live install.
+3. Forward-reference catalog on `RELEASE.md`. The live line is "a
+   cryptographic framer hash-pin is the planned hardening" after
+   `resolve_framer_key()` shipped. Today's catalog never opens that file.
+4. Named CLI that is not a `[project.scripts]` entry and not a file under
+   `scripts/`. Fixture is `contract-lint` and `looptimal-lint.py --stage frame`
+   in `references/pipeline.md`.
 
 Do not turn docs-check into a prose linter. Add catalog entries. The file
-header already says to do that.
+header already says to do that. Widen the scan set to `RELEASE.md`,
+`SKILL.md`, `CONTRIBUTING.md`, and `references/pipeline.md`.
 
 **Files.**
 
 - Edit `scripts/looptimal-docs-check.py`.
 - Edit `tests/test_docs_check.py`.
-- Edit `references/troubleshooting.md` only if the new check fails on `main`.
+- Edit `references/troubleshooting.md`, `RELEASE.md`, `SKILL.md`,
+  `README.md`, and `references/pipeline.md` only if the new check fails on
+  `main`.
 
 **You see.** A fixture tree with the `b9a1754` sentence exits 1. Current
-`CONTRIBUTING.md` stays GREEN.
+`CONTRIBUTING.md` stays GREEN. `RELEASE.md:21` and the phantom
+`contract-lint` lines go RED until the prose matches the tree.
 
 **Review gate.** None.
 
@@ -291,6 +320,10 @@ Change the schema so a command is either
 
 Reject a scalar that contains both `"` and `$`. Point the author at
 `library/secret-scan` as the copy source.
+
+Move `TRIVIAL_GATE` and the loop-spec `SELF_GRADE` regex onto the
+`_common.py` tables so a command that is a noop for a mission is a noop for
+a loop-spec. One owner.
 
 Leave graph v1 plan-only. Do not invent missing library bundles.
 
@@ -342,6 +375,11 @@ patching `HOME` to a temp dir. Prove it on the pre-`2061e89` pattern.
 
 Scrub `GIT_*` stays in `hooks/pre-push`. Do not re-teach it.
 
+The hook and CI are not the same suite. The hook runs both doctors and both
+`--selftest`s. CI does not. CI runs spec lint, network-import deny, shellcheck,
+and SkillSpector. The hook does not. Do not pretend one replaces the other.
+If a later change adds a hook check, add the matching CI job in the same PR.
+
 **Review gate.** None.
 
 ### PR-6. Skillspector findings keyed by symbol
@@ -377,7 +415,9 @@ it. No second copy of `SKILL.md`. No essay.
 ```
 
 Point Cursor, Claude, and Codex at this file with a one-line stub in
-`CLAUDE.md` only. Do not grow `CLAUDE.md`.
+`CLAUDE.md` only. Do not grow `CLAUDE.md`. Today that file only steers the
+build journal. It never names the hook, CI, or DCO. The stub is what makes
+the always-on file useful.
 
 **Review gate.** The operator reads the page once.
 
@@ -437,6 +477,15 @@ Decision. Keep both prefixes. Put the classifier at the boundary.
 Unproven. Whether SkillSpector can key findings on symbols without a fork.
 PR-6 treats that as a repo convention if the tool cannot.
 
+### How slices after the first draft
+
+Three read-only `/how` passes on the lint pair, the honesty gates, and the
+contributor gates. They did not change the ranking. They added live lines
+that belong in PR-1 (doctors and phantom commands) and PR-2 (`RELEASE.md`,
+`pipeline.md`, scan set). Stage 6 still GREENS a sealed `exit 0`. That stays
+an owned residual in `SECURITY.md` unless a later PR requires a holdout
+oracle for `sensitivity: high`.
+
 ## Appendix B. Alternatives that lost
 
 **Mass rename of `loopprint-*`.** Loses git blame, breaks every published
@@ -482,6 +531,6 @@ Read these before editing a later PR.
 - Commit `2061e89` (non-hermetic lint tests)
 - Commit `446b7de` (pre-push gate, and the skill that must not be a public path)
 
-PR-1 and PR-3 should run a `/how` pass on the lint pair before coding. PR-4
-should run `/how` on `loopprint-ls.py`. PR-6 should run `/interrogate` if it
-touches `scripts/_common.py` crypto or `safe_env`.
+PR-1 and PR-3 should re-read the lint pair before coding. PR-4 should
+re-read `loopprint-ls.py`. PR-6 should run `/interrogate` if it touches
+`scripts/_common.py` crypto or `safe_env`.
