@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover
 VALID_PATTERNS = {"morty", "spec-driven", "performance", "hybrid"}
 VALID_VERIFIER_SHAPES = {"gate", "ratchet"}
 SCHEMA_VERSION = 1  # highest loop-spec schema version this linter understands
+SEMVER = re.compile(r"\d+\.\d+\.\d+")  # a loop:// pin names x.y.z, so version: must match that shape
 VALID_CHECKPOINT_MODES = {"before", "after"}
 VALID_STAGE_SUCCESS = {"gate", "ratchet"}
 
@@ -93,6 +94,11 @@ def lint_spec(spec: dict) -> list[str]:
             f.append(f"schema_version: '{sv}' is not a positive integer.")
         elif sv > SCHEMA_VERSION:
             f.append(f"schema_version: {sv} is newer than this linter supports ({SCHEMA_VERSION}) — upgrade loopprint.")
+
+    # version — optional for back-compat; if present it must be the x.y.z a loop:// pin can name.
+    ver = spec.get("version")
+    if ver is not None and not SEMVER.fullmatch(str(ver).strip()):
+        f.append(f"version: '{ver}' is not x.y.z — a loop://slug@x.y.z pin cannot name it.")
 
     # checkpoint_mode — optional; 'before' = authorize each step, 'after' = review each result.
     cm = spec.get("checkpoint_mode")
