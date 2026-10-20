@@ -2,6 +2,8 @@
 # verify.sh — critic-panel fan-out gate for the critic-panel example.
 # Derived from the critic-panel recipe in templates/verifier-library.yaml.
 # EXIT 0 (GREEN) iff >= QUORUM_K critics score ARTIFACT >= THRESHOLD.
+# EXIT 3 (VOID)  if any critic quotes the isolation canary — see below. Void is not a low
+# score: it means the panel cannot be trusted to be a gate at all, so it outranks quorum.
 # Emits critics.jsonl (one JSON line per critic, {score, reason} + provenance) in the working
 # directory. Each critic-N.sh prints a JSON verdict {"score": N, "reason": "..."} on stdout —
 # parsed via python3 -c (never eval'd as shell) and re-serialized through json.dumps so a
@@ -24,9 +26,27 @@ rsha=$(sha "$RUBRIC")
 asha=$(sha "$ARTIFACT")
 pass=0
 
+# Isolation canary. A critic is supposed to score from the rubric and artifact it is handed,
+# not from whatever else happens to be in the working directory — a maker's notes, a previous
+# critics.jsonl, a reference answer. Plant a random token in a file no critic was given; if a
+# verdict quotes it back, the critic can read what it should not, and every score it produced
+# is worthless. Cheap, falsifiable, and it fails loudly instead of silently grading itself.
+CANARY_FILE=".critic-canary"
+CANARY_TOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
+printf 'canary %s\nIf you can quote this token, you read a file you were not given.\n' \
+  "$CANARY_TOKEN" > "$CANARY_FILE"
+trap 'rm -f "$CANARY_FILE"' EXIT
+
 for i in $(seq 1 "$N"); do
   script="./critic-${i}.sh"
   raw=$(bash "$script" --rubric "$RUBRIC" --artifact "$ARTIFACT") || raw='{"score": 0, "reason": "critic script exited non-zero"}'
+  case "$raw" in
+    *"$CANARY_TOKEN"*)
+      echo "critic-panel: VOID — critic-$i quoted the isolation canary from $CANARY_FILE." >&2
+      echo "critic-panel: it can read files it was never given, so no score from this panel counts." >&2
+      exit 3
+      ;;
+  esac
   provider=$(grep -m1 -oE 'PROVIDER=[A-Za-z0-9_-]+' "$script" | cut -d= -f2 || true)
   ok=$(RAW="$raw" TS="$(date -u +%FT%TZ)" CRITIC="critic-$i" PROVIDER="${provider:-unknown}" \
        THRESHOLD="$THRESHOLD" RSHA="$rsha" ASHA="$asha" NN="$N" QK="$QUORUM_K" python3 -c '

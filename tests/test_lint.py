@@ -64,3 +64,36 @@ def test_main_subprocess_exit_codes():
         cwd=ROOT,
     )
     assert proc.returncode == 1
+
+
+def _minimal_spec() -> dict:
+    return {
+        "goal": "Ship one verified slice.",
+        "pattern": "hybrid",
+        "state": {"path": "loops/example/state.md"},
+        "verifier": {"kind": "lint", "command": "bash verify.sh", "green_means": "ok"},
+        "stop": {"success": "verifier GREEN", "max_iterations": 5},
+    }
+
+
+def _version_findings(value) -> list[str]:
+    spec = _minimal_spec()
+    if value is not None:
+        spec["version"] = value
+    return [f for f in lint_spec(spec) if f.startswith("version:")]
+
+
+def test_version_absent_is_clean():
+    # Optional for back-compat: the four library starters shipped without it.
+    assert _version_findings(None) == []
+
+
+def test_version_semver_is_clean():
+    assert _version_findings("1.0.0") == []
+
+
+@pytest.mark.parametrize("bad", ["1.0", "v1.0.0", "latest", "1.0.0-rc1", ""])
+def test_version_must_be_nameable_by_a_loop_pin(bad):
+    # A loop://slug@x.y.z pin can only name an exact x.y.z, so anything else is a claim
+    # the pin cannot express.
+    assert _version_findings(bad), f"{bad!r} should not lint clean"

@@ -105,11 +105,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The default checkout fetches no tags, and the guard fails closed when it
+          # cannot see any — "I could not look" must not pass as "I looked". Tags are
+          # what proves a dated CHANGELOG release actually shipped.
+          fetch-tags: true
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # On every push/PR: plugin.json version must match the top CHANGELOG entry.
-      # On a release (tag push): the tag must match that version too — blocks a phantom release.
+      # On every push/PR: plugin.json version must match the top CHANGELOG entry, and a
+      # version the CHANGELOG dates as released must have a matching tag that exists.
+      # On a release (tag push): the pushed tag must match that version too.
       - name: version surfaces agree
         shell: bash
         run: |
