@@ -75,3 +75,21 @@ def test_only_a_dated_section_obliges_a_tag(tmp_path, monkeypatch, heading, expe
     changelog.write_text(f"# Changelog\n\n{heading}\n\n### Added\n- thing\n")
     monkeypatch.setattr(guard, "CHANGELOG", changelog)
     assert guard._changelog_marks_released("2.2.0") is expected
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        ('[project]\nname = "x"\nversion = "2.2.0"\n', "2.2.0"),
+        ("[project]\nname = 'x'\nversion = '2.2.0'\n", "2.2.0"),
+        ('[project]\nname = "x"\n', None),
+    ],
+)
+def test_reads_the_pyproject_version(tmp_path, body, expected):
+    f = tmp_path / "pyproject.toml"
+    f.write_text(body)
+    assert guard.read_pyproject_version(f) == expected
+
+
+def test_missing_pyproject_is_none_not_a_crash(tmp_path):
+    assert guard.read_pyproject_version(tmp_path / "nope.toml") is None

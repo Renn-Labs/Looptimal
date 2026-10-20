@@ -3,6 +3,7 @@
 
 Always enforced (every push / PR):
   .claude-plugin/plugin.json  "version"   ==   top entry in CHANGELOG.md  (## [x.y.z])
+  pyproject.toml              version     ==   that same version
 
 Additionally enforced on a release (when --tag vX.Y.Z is passed, e.g. on a tag push):
   the tag (minus a leading 'v')           ==   that same version
@@ -35,6 +36,7 @@ from _common import read_changelog_top_version, read_plugin_version  # noqa: E40
 ROOT = Path(__file__).resolve().parent.parent
 PLUGIN = ROOT / ".claude-plugin" / "plugin.json"
 CHANGELOG = ROOT / "CHANGELOG.md"
+PYPROJECT = ROOT / "pyproject.toml"
 
 
 def _plugin_version() -> str:
@@ -54,6 +56,20 @@ def _changelog_top_version() -> str:
         return read_changelog_top_version(CHANGELOG)
     except (OSError, ValueError) as exc:
         sys.exit(f"FAIL: {exc}")
+
+
+def read_pyproject_version(pyproject: Path) -> str | None:
+    """The [project] version, or None when pyproject has none to compare.
+
+    A third version surface this guard did not read — it drifts as easily as the other two,
+    and `uvx --from git+...` installs from it.
+    """
+    try:
+        text = pyproject.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', text, re.MULTILINE)
+    return m.group(1) if m else None
 
 
 def _changelog_marks_released(version: str) -> bool:
@@ -128,6 +144,15 @@ def main() -> int:
         ok = False
     else:
         print(f"ok: plugin.json == CHANGELOG == {plugin_v}")
+
+    pyproject_v = read_pyproject_version(PYPROJECT)
+    if pyproject_v is None:
+        print("ok: pyproject.toml declares no version — nothing to drift")
+    elif pyproject_v != plugin_v:
+        print(f"FAIL: pyproject.toml version {pyproject_v!r} != plugin.json version {plugin_v!r}")
+        ok = False
+    else:
+        print(f"ok: pyproject.toml == {pyproject_v}")
 
     released = _changelog_marks_released(changelog_v)
     if released:
