@@ -7,6 +7,12 @@ Always enforced (every push / PR):
 Additionally enforced on a release (when --tag vX.Y.Z is passed, e.g. on a tag push):
   the tag (minus a leading 'v')           ==   that same version
 
+Also always enforced: if the CHANGELOG marks that version as RELEASED (a dated section,
+not [Unreleased]), a matching vX.Y.Z tag must actually exist. The --tag assertion above
+cannot catch a version that was never tagged at all, because CI only passes --tag on a
+tag push — so the tag it names always exists by construction. That blind spot is exactly
+how a dated 2.2.0 section shipped while the newest tag was still v2.1.0.
+
 This is the check that would have caught the "phantom v2.0.0" — manifests declaring 2.0.0
 while the newest git tag was still v1.1.0. Stdlib-only; no third-party deps.
 
@@ -18,6 +24,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -48,9 +56,67 @@ def _changelog_top_version() -> str:
         sys.exit(f"FAIL: {exc}")
 
 
+def _changelog_marks_released(version: str) -> bool:
+    """True when the CHANGELOG heading for this version carries a date.
+
+    `## [2.2.0] - 2026-07-08` is a claim that 2.2.0 shipped; a bare `## [2.2.0]` is not.
+    Only the dated form obliges a tag to exist, so an in-progress version never trips
+    the tag check.
+    """
+    try:
+        text = CHANGELOG.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("## ") and f"[{version}]" in line:
+            after = line.split(f"[{version}]", 1)[1]
+            return bool(re.search(r"\d{4}-\d{2}-\d{2}", after))
+    return False
+
+
+def _git_tags(repo: Path) -> list[str] | None:
+    """Tag names in a local checkout, or None if git cannot be read.
+
+    Reads refs that are already on disk — no network, which the zero-network invariant
+    (scripts/check-no-network-imports.py) requires. A shallow CI checkout has no tags
+    at all unless the workflow asks for them; that case is a FAIL, never a skip, because
+    "I could not look" must not read the same as "I looked and it was fine".
+    """
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(repo), "tag", "--list"],
+            capture_output=True, text=True, check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return [line.strip() for line in done.stdout.splitlines() if line.strip()]
+
+
+def check_release_tag_exists(version: str, repo: Path) -> tuple[bool, str]:
+    """A version the CHANGELOG dates as released must have a tag to match."""
+    expected = f"v{version}"
+    tags = _git_tags(repo)
+    if tags is None:
+        return False, f"FAIL: cannot read git tags in {repo} — refusing to pass without evidence."
+    if not tags:
+        return False, (
+            "FAIL: this checkout has no tags, so the release tag could not be verified.\n"
+            "      In CI set `fetch-tags: true` on actions/checkout; locally run `git fetch --tags`."
+        )
+    if expected not in tags:
+        return False, (
+            f"FAIL: CHANGELOG dates {version} as released but tag {expected} does not exist "
+            f"(newest seen: {sorted(tags)[-1]}).\n"
+            f"      Either cut {expected}, or move that CHANGELOG section back under [Unreleased]."
+        )
+    return True, f"ok: release tag {expected} exists"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Guard release version consistency.")
     ap.add_argument("--tag", help="release tag to also assert, e.g. v2.0.0")
+    ap.add_argument("--repo", type=Path, default=ROOT, help="checkout to read tags from (testing)")
     args = ap.parse_args()
 
     plugin_v = _plugin_version()
@@ -62,6 +128,14 @@ def main() -> int:
         ok = False
     else:
         print(f"ok: plugin.json == CHANGELOG == {plugin_v}")
+
+    released = _changelog_marks_released(changelog_v)
+    if released:
+        tag_ok, tag_msg = check_release_tag_exists(changelog_v, args.repo)
+        print(tag_msg)
+        ok = ok and tag_ok
+    else:
+        print(f"ok: {changelog_v} is not dated as released yet — no tag required")
 
     if args.tag:
         tag_v = args.tag[1:] if args.tag.startswith("v") else args.tag
