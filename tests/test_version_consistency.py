@@ -72,7 +72,7 @@ def test_unreadable_repo_fails_closed(tmp_path):
 )
 def test_only_a_dated_section_obliges_a_tag(tmp_path, monkeypatch, heading, expected):
     changelog = tmp_path / "CHANGELOG.md"
-    changelog.write_text(f"# Changelog\n\n{heading}\n\n### Added\n- thing\n")
+    changelog.write_text(f"# Changelog\n\n{heading}\n\n### Added\n- thing\n", encoding="utf-8")
     monkeypatch.setattr(guard, "CHANGELOG", changelog)
     assert guard._changelog_marks_released("2.2.0") is expected
 
@@ -87,9 +87,20 @@ def test_only_a_dated_section_obliges_a_tag(tmp_path, monkeypatch, heading, expe
 )
 def test_reads_the_pyproject_version(tmp_path, body, expected):
     f = tmp_path / "pyproject.toml"
-    f.write_text(body)
+    f.write_text(body, encoding="utf-8")
     assert guard.read_pyproject_version(f) == expected
 
 
 def test_missing_pyproject_is_none_not_a_crash(tmp_path):
     assert guard.read_pyproject_version(tmp_path / "nope.toml") is None
+
+
+def test_undecodable_changelog_fails_closed(tmp_path, monkeypatch):
+    """Regression: this read used to swallow the error and return False — "not released,
+    so no tag required" — which skips the tag check instead of refusing to answer.
+    Windows CI surfaced it by writing an em-dash in the locale codepage."""
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_bytes(b"# Changelog\n\n## [2.2.0] \x97 2026-07-08\n")  # cp1252 em-dash
+    monkeypatch.setattr(guard, "CHANGELOG", changelog)
+    with pytest.raises(SystemExit):
+        guard._changelog_marks_released("2.2.0")

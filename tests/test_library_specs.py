@@ -32,7 +32,7 @@ def _ci_library_lint_patterns() -> list[str]:
     the failure this file exists to prevent. If the job is renamed or its command
     changes shape, this raises rather than quietly testing the wrong thing.
     """
-    workflow = yaml.safe_load(CI.read_text())
+    workflow = yaml.safe_load(CI.read_text(encoding="utf-8"))
     steps = workflow["jobs"]["library-lint"]["steps"]
     for step in steps:
         run = step.get("run", "")
@@ -67,7 +67,7 @@ def test_unparseable_spec_is_red(tmp_path):
     # Negative control: the nested-quote break that took main RED on 2026-07-26.
     # Without this, a linter that silently skipped unreadable files would pass above.
     broken = tmp_path / "loop-spec.yaml"
-    broken.write_text(
+    broken.write_text(  # explicit encoding: Windows would otherwise use the codepage
         'schema_version: 1\n'
         'slug: broken-fixture\n'
         'goal: >\n'
@@ -79,7 +79,8 @@ def test_unparseable_spec_is_red(tmp_path):
         '  command: "git status --porcelain | test -z "$(cat)""\n'
         'stop:\n'
         '  success: "verifier GREEN"\n'
-        '  max_iterations: 5\n'
+        '  max_iterations: 5\n',
+        encoding="utf-8",
     )
     result = _run_lint(broken)
     assert result.returncode != 0, "unparseable spec must not lint GREEN"

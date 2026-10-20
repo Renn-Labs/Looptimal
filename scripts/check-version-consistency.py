@@ -80,8 +80,11 @@ def _changelog_marks_released(version: str) -> bool:
     """
     try:
         text = CHANGELOG.read_text(encoding="utf-8")
-    except OSError:
-        return False
+    except (OSError, UnicodeDecodeError) as exc:
+        # Fail closed, same idiom as the readers above. Returning False here would mean
+        # "not released, so no tag required" — an unreadable file silently skipping the
+        # very check this function exists to make.
+        sys.exit(f"FAIL: cannot read {CHANGELOG}: {exc}")
     for line in text.splitlines():
         line = line.strip()
         if line.startswith("## ") and f"[{version}]" in line:
