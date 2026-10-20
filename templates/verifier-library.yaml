@@ -134,9 +134,20 @@ recipes:
       N=3; QUORUM_K=2; THRESHOLD=80
       sha() { (sha256sum "$1" 2>/dev/null || shasum -a 256 "$1") | awk '{print $1}'; }
       rsha=$(sha "$RUBRIC"); asha=$(sha "$ARTIFACT"); pass=0
+      # Isolation canary: a critic must score from the rubric and artifact it is HANDED, not
+      # from whatever else sits in the working directory. Plant a random token in a file no
+      # critic was given; if a verdict quotes it back, that critic can read what it should not
+      # and every score it produced is void (exit 3) — which outranks any quorum result.
+      CANARY_FILE=".critic-canary"
+      CANARY_TOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
+      printf 'canary %s\nIf you can quote this token, you read a file you were not given.\n' "$CANARY_TOKEN" > "$CANARY_FILE"
+      trap 'rm -f "$CANARY_FILE"' EXIT
       for i in $(seq 1 "$N"); do
         script="./critic-$i.sh"
         raw=$(bash "$script" --rubric "$RUBRIC" --artifact "$ARTIFACT") || raw='{"score": 0, "reason": "critic script exited non-zero"}'
+        case "$raw" in *"$CANARY_TOKEN"*)
+          echo "critic-panel: VOID — critic-$i quoted the isolation canary; no score counts." >&2; exit 3 ;;
+        esac
         provider=$(grep -m1 -oE 'PROVIDER=[A-Za-z0-9_-]+' "$script" | cut -d= -f2 || true)
         # Parse via json.loads (never eval) and re-serialize via json.dumps so a reason
         # containing quotes/newlines can't corrupt the jsonl line — pass data through env vars,
@@ -160,8 +171,8 @@ recipes:
       done
       [ "$pass" -ge "$QUORUM_K" ] || { echo "critic-panel: quorum FAIL ($pass/$N >= $QUORUM_K needed)" >&2; exit 1; }
       echo "critic-panel: quorum PASS ($pass/$N)"; exit 0
-    green_means: At least quorum_k of N independent critics scored the artifact at or above threshold. Each critic's verdict ({score, reason}) is logged to critics.jsonl with rubric_sha, artifact_sha, and provider — inspectable after the fact, including WHY a boundary case scored the way it did.
-    caveats: Judge ≠ maker — each critic-N.sh MUST be a separate script with distinct provider dispatch; it may not exec or source maker.sh. Strongest when critics target cross-provider judges (see provider.available / dispatch.checker from the dispatch layer); a single-provider panel is weaker but valid when consciously acknowledged. This GENERALIZES llm-rubric-judge — n=1, quorum_k=1 is the single-judge case; prefer llm-rubric-judge when one judge suffices.
+    green_means: No critic quoted the isolation canary, AND at least quorum_k of N independent critics scored the artifact at or above threshold. Each critic's verdict ({score, reason}) is logged to critics.jsonl with rubric_sha, artifact_sha, and provider — inspectable after the fact, including WHY a boundary case scored the way it did.
+    caveats: Judge ≠ maker — each critic-N.sh MUST be a separate script with distinct provider dispatch; it may not exec or source maker.sh. Exit 3 (canary VOID) is not a low score — it means the panel cannot be trusted as a gate, so never treat it as a quorum FAIL you can retry past. Strongest when critics target cross-provider judges (see provider.available / dispatch.checker from the dispatch layer); a single-provider panel is weaker but valid when consciously acknowledged. This GENERALIZES llm-rubric-judge — n=1, quorum_k=1 is the single-judge case; prefer llm-rubric-judge when one judge suffices.
 
   - id: judge-calibration-check
     kind: rubric

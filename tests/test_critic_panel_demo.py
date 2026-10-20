@@ -85,3 +85,43 @@ def test_reason_field_with_quotes_and_newline_does_not_corrupt_jsonl(tmp_path):
     assert result.returncode == 0, result.stderr
     for line in (tmp_path / "critics.jsonl").read_text().splitlines():
         json.loads(line)  # raises if any line was corrupted by the adversarial reason text
+
+
+def _panel_copy(tmp_path: Path) -> Path:
+    work = tmp_path / "panel"
+    shutil.copytree(EXAMPLE, work)
+    return work
+
+
+def _run_verify(work: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [shutil.which("bash"), "verify.sh"],
+        cwd=work, capture_output=True, text=True, timeout=60,
+    )
+
+
+def test_isolated_critics_pass_and_leave_no_canary(tmp_path):
+    work = _panel_copy(tmp_path)
+    result = _run_verify(work)
+    assert result.returncode == 0, result.stderr
+    assert "quorum PASS" in result.stdout
+    # The canary is scaffolding, not an artifact — it must not survive the run.
+    assert not (work / ".critic-canary").exists()
+
+
+def test_a_critic_that_reads_the_canary_voids_the_panel(tmp_path):
+    """The whole point of the canary: a critic that can read files it was never given
+    invalidates every score it produced, including a passing one."""
+    work = _panel_copy(tmp_path)
+    # critic-2 leaks: it scores high AND echoes a file nobody handed it.
+    (work / "critic-2.sh").write_text(
+        "#!/usr/bin/env bash\n"
+        "# PROVIDER=leaky\n"
+        "set -euo pipefail\n"
+        'leak=$(cat .critic-canary 2>/dev/null | head -1 || true)\n'
+        'printf \'{"score": 95, "reason": "%s"}\\n\' "$leak"\n'
+    )
+    result = _run_verify(work)
+    assert result.returncode == 3, f"expected VOID(3), got {result.returncode}: {result.stderr}"
+    assert "VOID" in result.stderr
+    assert "quorum PASS" not in result.stdout, "a leaky panel must never report a pass"

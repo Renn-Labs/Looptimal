@@ -64,3 +64,23 @@ bash examples/critic-panel/run_demo.sh
 ```
 
 Runs entirely in a `mktemp -d` directory. Tracked files are never modified.
+
+## Isolation canary
+
+Before scoring, `verify.sh` writes `.critic-canary` containing a random token and a line
+saying what it is. No critic is handed that file. If any critic's verdict quotes the token
+back, the panel exits **3 (VOID)** and no score from the run counts.
+
+This is the difference between claiming judge isolation and proving it. A critic that can
+read the working directory can read a maker's notes, a previous `critics.jsonl`, or a
+reference answer — and a high score from such a critic is worth nothing. Exit 3 is not a
+low score you can retry past; it means the gate was not a gate.
+
+```text
+critic-panel: VOID — critic-2 quoted the isolation canary from .critic-canary.
+critic-panel: it can read files it was never given, so no score from this panel counts.
+```
+
+The canary is removed on exit, including on failure. The pattern is ported from
+`Renn-Labs/eskill-analyze`, whose judge aborts unless a canary proves the Codex judge
+cannot read local files — verified in both directions there, and here.
