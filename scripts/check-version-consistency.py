@@ -26,7 +26,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -61,8 +60,8 @@ def _changelog_top_version() -> str:
 def read_pyproject_version(pyproject: Path) -> str | None:
     """The [project] version, or None when pyproject has none to compare.
 
-    A third version surface this guard did not read — it drifts as easily as the other two,
-    and `uvx --from git+...` installs from it.
+    A third version surface this guard did not read. It drifts as easily as the other two,
+    and it is what a zero-clone install resolves.
     """
     try:
         text = pyproject.read_text(encoding="utf-8")
@@ -94,19 +93,48 @@ def _changelog_marks_released(version: str) -> bool:
 def _git_tags(repo: Path) -> list[str] | None:
     """Tag names in a local checkout, or None if git cannot be read.
 
-    Reads refs that are already on disk — no network, which the zero-network invariant
-    (scripts/check-no-network-imports.py) requires. A shallow CI checkout has no tags
-    at all unless the workflow asks for them; that case is a FAIL, never a skip, because
-    "I could not look" must not read the same as "I looked and it was fine".
+    Reads refs straight off disk — no network, and no subprocess either, so this guard
+    spawns nothing. A shallow CI checkout has no tags at all unless the workflow asks for
+    them; that case is a FAIL, never a skip, because "I could not look" must not read the
+    same as "I looked and it was fine".
     """
-    try:
-        done = subprocess.run(
-            ["git", "-C", str(repo), "tag", "--list"],
-            capture_output=True, text=True, check=True,
-        )
-    except (OSError, subprocess.SubprocessError):
+    gitdir = repo / ".git"
+    if gitdir.is_file():  # worktree or submodule: .git is a pointer file
+        try:
+            pointer = gitdir.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        if not pointer.startswith("gitdir:"):
+            return None
+        target = Path(pointer.split(":", 1)[1].strip())
+        gitdir = target if target.is_absolute() else (repo / target)
+    if not gitdir.is_dir():
         return None
-    return [line.strip() for line in done.stdout.splitlines() if line.strip()]
+    common = gitdir / "commondir"  # a worktree keeps shared refs in the main gitdir
+    if common.is_file():
+        try:
+            gitdir = (gitdir / common.read_text(encoding="utf-8").strip()).resolve()
+        except OSError:
+            return None
+
+    tags: set[str] = set()
+    loose = gitdir / "refs" / "tags"
+    if loose.is_dir():
+        tags.update(p.relative_to(loose).as_posix() for p in loose.rglob("*") if p.is_file())
+    packed = gitdir / "packed-refs"
+    if packed.is_file():
+        try:
+            lines = packed.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return None
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith(("#", "^")):
+                continue
+            parts = line.split(" ", 1)
+            if len(parts) == 2 and parts[1].startswith("refs/tags/"):
+                tags.add(parts[1][len("refs/tags/"):])
+    return sorted(tags)
 
 
 def check_release_tag_exists(version: str, repo: Path) -> tuple[bool, str]:
